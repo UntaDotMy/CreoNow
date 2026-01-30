@@ -19,3 +19,10 @@
   - PreferenceStore：`key: string` → `key: PreferenceKey`
   - 滚动条：`border-radius: 3px` → `var(--radius-full)`
 - Evidence: `git diff --stat` shows +91/-76 lines
+
+### 2026-01-30 合并确认
+- Command: `gh pr view 6 --json state,mergedAt`
+- Key output: `state: MERGED, mergedAt: 2026-01-30T15:52:08Z`
+- Merge commit: `9ef846de3b64ada75c16ab55afaffb5a4e954f65`
+- Note: CI check 失败（缺少 pnpm-lock.yaml），但 PR 已通过 auto-merge 合并（branch protection 未强制要求 CI 通过）
+- TODO: 需要后续 PR 添加 pnpm-lock.yaml 以修复 CI
