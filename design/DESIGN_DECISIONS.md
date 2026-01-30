@@ -1,9 +1,17 @@
 # CreoNow 前端设计决策
 
-> **状态**: 已锁定
-> **更新日期**: 2026-01-30
-> **来源**: 与创始人的产品讨论 + Variant 设计稿
+> **状态**: 已锁定  
+> **更新日期**: 2026-01-30  
+> **来源**: 与创始人的产品讨论 + Variant 设计稿  
 > **参考设计稿**: `design/Variant/designs/` 目录下的 19 个 HTML 文件
+
+---
+
+## 规范级别说明
+
+- **MUST**: 必须遵守，违反即为 bug
+- **SHOULD**: 强烈建议，除非有明确理由
+- **MAY**: 可选，根据具体场景决定
 
 ---
 
@@ -12,19 +20,19 @@
 ### 1.1 整体布局
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│                        顶部标题栏 (可选，Electron)                    │
-├────┬──────────┬─────────────────────────────────┬───────────────────┤
-│    │          │                                 │                   │
-│ I  │  Left    │         Main Content            │   Right Panel     │
-│ c  │  Sidebar │         (Editor)                │   (AI/Info)       │
-│ o  │          │                                 │                   │
-│ n  │  可拖拽   │                                 │   可拖拽           │
-│    │  ←→      │                                 │   ←→              │
-│ B  │          │                                 │                   │
-│ a  │          ├─────────────────────────────────┤                   │
-│ r  │          │         底部状态栏               │                   │
-└────┴──────────┴─────────────────────────────────┴───────────────────┘
++---------------------------------------------------------------------+
+|                        顶部标题栏 (可选，Electron)                    |
++----+----------+---------------------------------+-------------------+
+|    |          |                                 |                   |
+| I  |  Left    |         Main Content            |   Right Panel     |
+| c  |  Sidebar |         (Editor)                |   (AI/Info)       |
+| o  |          |                                 |                   |
+| n  |  可拖拽   |                                 |   可拖拽           |
+|    |  <->     |                                 |   <->             |
+| B  |          |                                 |                   |
+| a  |          +---------------------------------+                   |
+| r  |          |         底部状态栏               |                   |
++----+----------+---------------------------------+-------------------+
 ```
 
 ### 1.2 页面类型
@@ -38,15 +46,16 @@
 | 禅模式 | 全屏纯编辑 | `07-editor-simple.html` |
 
 ### 1.3 禅模式
-- **触发**: F11 键
-- **效果**: 隐藏所有面板，仅保留编辑区和最小化工具栏
-- **退出**: 再次按 F11 或 Esc
+
+- **触发**: MUST 使用 F11 键
+- **效果**: MUST 隐藏所有面板，仅保留编辑区和最小化工具栏
+- **退出**: MUST 支持再次按 F11 或 Esc
 
 ---
 
 ## 2. 尺寸与布局规范
 
-### 2.1 固定尺寸
+### 2.1 固定尺寸 (MUST)
 
 | 元素 | 尺寸 | 说明 |
 |------|------|------|
@@ -60,30 +69,36 @@
 
 | 元素 | 默认 | 最小 | 最大 | 拖拽 |
 |------|------|------|------|------|
-| 左侧 Sidebar | 240px | 180px | 400px | ✅ 可拖拽 |
-| 右侧面板 | 320px | 280px | 480px | ✅ 可拖拽 |
+| 左侧 Sidebar | 240px | 180px | 400px | MUST 支持 |
+| 右侧面板 | 320px | 280px | 480px | MUST 支持 |
 
-### 2.3 拖拽调整规范
+### 2.3 网格对齐规则 (MUST)
+
+- 所有间距 MUST 基于 **4px 网格**
+- 组件尺寸 SHOULD 基于 **8px 网格**（4px 网格的倍数）
+- 禁止使用非 4px 倍数的间距值
+
+### 2.4 拖拽调整规范
 
 ```
 拖拽手柄:
-- 宽度: 8px（可点击区域）
-- 可见宽度: 1px（视觉分割线）
-- 悬停时: 显示为 2px 高亮线 + cursor: col-resize
-- 拖拽中: 显示实时预览线
+- 可点击区域: 8px 宽
+- 可见分割线: 1px 宽，使用 --color-separator
+- 悬停时: MUST 变为 2px 宽高亮线 + cursor: col-resize
+- 拖拽中: MUST 显示实时预览线
 
 行为:
-- 双击手柄: 恢复默认宽度
-- 拖拽时实时更新布局
-- 释放后记住用户偏好（localStorage）
+- 双击手柄: MUST 恢复默认宽度
+- 拖拽时: MUST 实时更新布局
+- 释放后: MUST 持久化用户偏好（见 §13 Preference Store）
 ```
 
-### 2.4 面板折叠
+### 2.5 面板折叠
 
 | 面板 | 折叠方式 | 快捷键 |
 |------|----------|--------|
 | 左侧 Sidebar | 点击 Icon Bar 当前图标 | Cmd/Ctrl+B |
-| 右侧面板 | 点击折叠按钮 | Cmd/Ctrl+L (AI) |
+| 右侧面板 | 点击折叠按钮 | Cmd/Ctrl+L |
 
 折叠后:
 - 左侧: 仅保留 Icon Bar (48px)
@@ -91,39 +106,121 @@
 
 ---
 
-## 3. Design Tokens（完整规范）
+## 3. Design Tokens
 
-### 3.1 颜色系统 - 深色主题
+### 3.1 实现落点
 
+```
+文件位置: apps/desktop/renderer/src/styles/tokens.css
+Tailwind 映射: tailwind.config.ts 中通过 theme.extend.colors 引用 CSS Variables
+使用方式: MUST 使用 CSS Variable，禁止硬编码颜色值
+```
+
+### 3.2 颜色系统 - 背景层级
+
+**深色主题:**
 ```css
-/* 背景层级（从深到浅） */
---color-bg-body: #080808;           /* 最深层背景 */
---color-bg-surface: #0f0f0f;        /* 卡片/面板/输入框背景 */
---color-bg-hover: #1a1a1a;          /* 悬停状态背景 */
---color-bg-active: #1f1f1f;         /* 激活/按下状态背景 */
---color-bg-selected: #222222;       /* 选中项背景 */
+/* 背景层级（从深到浅，数字越大越浅） */
+--color-bg-base: #080808;           /* 窗口最底层背景 */
+--color-bg-surface: #0f0f0f;        /* 面板/卡片/输入框背景 */
+--color-bg-raised: #141414;         /* 浮起元素背景（popover/dropdown） */
+--color-bg-overlay: rgba(0, 0, 0, 0.6);  /* 遮罩层 */
 
-/* 文字层级 */
---color-text-primary: #ffffff;      /* 主要文字 */
---color-text-secondary: #888888;    /* 次要文字 */
---color-text-tertiary: #444444;     /* 最弱文字/占位符 */
---color-text-disabled: #333333;     /* 禁用文字 */
+/* 交互状态背景 */
+--color-bg-hover: #1a1a1a;          /* 悬停状态 */
+--color-bg-active: #1f1f1f;         /* 激活/按下状态 */
+--color-bg-selected: #222222;       /* 选中项 */
+```
 
-/* 边框 */
+**浅色主题:**
+```css
+/* 背景层级（从浅到深，数字越大越深） */
+--color-bg-base: #ffffff;           /* 窗口最底层背景 */
+--color-bg-surface: #f8f8f8;        /* 面板/卡片/输入框背景 */
+--color-bg-raised: #ffffff;         /* 浮起元素背景 */
+--color-bg-overlay: rgba(0, 0, 0, 0.3);  /* 遮罩层 */
+
+/* 交互状态背景 */
+--color-bg-hover: #f0f0f0;
+--color-bg-active: #e8e8e8;
+--color-bg-selected: #e0e0e0;
+```
+
+### 3.3 颜色系统 - 前景（文字/图标）
+
+**深色主题:**
+```css
+--color-fg-default: #ffffff;        /* 主要文字 */
+--color-fg-muted: #888888;          /* 次要文字 */
+--color-fg-subtle: #666666;         /* 辅助文字 */
+--color-fg-placeholder: #444444;    /* 占位符 */
+--color-fg-disabled: #333333;       /* 禁用状态 */
+--color-fg-inverse: #080808;        /* 反色（用于 Primary 按钮文字） */
+--color-fg-on-accent: #ffffff;      /* 强调色上的文字 */
+```
+
+**浅色主题:**
+```css
+--color-fg-default: #1a1a1a;
+--color-fg-muted: #666666;
+--color-fg-subtle: #888888;
+--color-fg-placeholder: #999999;
+--color-fg-disabled: #cccccc;
+--color-fg-inverse: #ffffff;
+--color-fg-on-accent: #ffffff;
+```
+
+### 3.4 颜色系统 - 边框与分割线
+
+**深色主题:**
+```css
 --color-border-default: #222222;    /* 默认边框 */
 --color-border-hover: #333333;      /* 悬停边框 */
---color-border-focus: #444444;      /* 聚焦边框 */
---color-border-active: #888888;     /* 激活边框 */
+--color-border-focus: #444444;      /* 聚焦边框（非 focus ring） */
+--color-separator: rgba(255, 255, 255, 0.06);  /* 1px 分割线（低 alpha） */
+--color-separator-bold: #222222;    /* 粗分割线 */
+```
 
-/* 功能色 */
---color-primary: #ffffff;           /* 主要操作 */
---color-primary-hover: #e0e0e0;     /* 主要操作悬停 */
---color-error: #ff4444;             /* 错误/危险 */
---color-success: #22c55e;           /* 成功 */
---color-warning: #f59e0b;           /* 警告 */
---color-info: #3b82f6;              /* 信息 */
+**浅色主题:**
+```css
+--color-border-default: #e0e0e0;
+--color-border-hover: #d0d0d0;
+--color-border-focus: #c0c0c0;
+--color-separator: rgba(0, 0, 0, 0.06);
+--color-separator-bold: #e0e0e0;
+```
 
-/* 强调色（知识图谱节点等） */
+### 3.5 颜色系统 - Focus Ring (MUST 统一使用)
+
+```css
+/* Focus ring 专用，区别于 border-focus */
+--color-ring-focus: rgba(255, 255, 255, 0.4);  /* 深色主题 */
+--color-ring-focus: rgba(0, 0, 0, 0.2);        /* 浅色主题 */
+--ring-focus-width: 2px;
+--ring-focus-offset: 2px;
+```
+
+**Focus 规则 (MUST):**
+- 使用 `:focus-visible` 而非 `:focus`
+- 键盘导航时 MUST 显示 focus ring
+- 鼠标点击 MUST NOT 显示 focus ring
+- 实现方式: `box-shadow: 0 0 0 var(--ring-focus-width) var(--color-ring-focus);`
+- 偏移: `outline: var(--ring-focus-width) solid transparent; outline-offset: var(--ring-focus-offset);`
+
+### 3.6 颜色系统 - 功能色
+
+```css
+/* 功能色（两个主题共用，MAY 微调亮度） */
+--color-error: #ef4444;
+--color-error-subtle: rgba(239, 68, 68, 0.1);
+--color-success: #22c55e;
+--color-success-subtle: rgba(34, 197, 94, 0.1);
+--color-warning: #f59e0b;
+--color-warning-subtle: rgba(245, 158, 11, 0.1);
+--color-info: #3b82f6;
+--color-info-subtle: rgba(59, 130, 246, 0.1);
+
+/* 强调色（知识图谱节点） */
 --color-accent-blue: #3b82f6;       /* 角色 */
 --color-accent-green: #22c55e;      /* 地点 */
 --color-accent-orange: #f97316;     /* 事件 */
@@ -131,35 +228,29 @@
 --color-accent-purple: #8b5cf6;     /* 其他 */
 ```
 
-### 3.2 颜色系统 - 浅色主题
+### 3.7 阴影系统
 
 ```css
-/* 背景层级（从浅到深） */
---color-bg-body: #ffffff;           /* 最深层背景 */
---color-bg-surface: #f8f8f8;        /* 卡片/面板/输入框背景 */
---color-bg-hover: #f0f0f0;          /* 悬停状态背景 */
---color-bg-active: #e8e8e8;         /* 激活/按下状态背景 */
---color-bg-selected: #e0e0e0;       /* 选中项背景 */
+/* 深色主题 - 阴影较重 */
+--shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+--shadow-md: 0 4px 8px rgba(0, 0, 0, 0.5);
+--shadow-lg: 0 8px 16px rgba(0, 0, 0, 0.6);
+--shadow-xl: 0 16px 32px rgba(0, 0, 0, 0.7);
 
-/* 文字层级 */
---color-text-primary: #1a1a1a;      /* 主要文字 */
---color-text-secondary: #666666;    /* 次要文字 */
---color-text-tertiary: #999999;     /* 最弱文字/占位符 */
---color-text-disabled: #cccccc;     /* 禁用文字 */
-
-/* 边框 */
---color-border-default: #e0e0e0;    /* 默认边框 */
---color-border-hover: #d0d0d0;      /* 悬停边框 */
---color-border-focus: #c0c0c0;      /* 聚焦边框 */
---color-border-active: #999999;     /* 激活边框 */
-
-/* 功能色（保持不变或微调） */
---color-primary: #1a1a1a;           /* 主要操作 */
---color-primary-hover: #333333;     /* 主要操作悬停 */
-/* 其他功能色同深色主题 */
+/* 浅色主题 - 阴影较轻 */
+--shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+--shadow-md: 0 4px 8px rgba(0, 0, 0, 0.08);
+--shadow-lg: 0 8px 16px rgba(0, 0, 0, 0.1);
+--shadow-xl: 0 16px 32px rgba(0, 0, 0, 0.15);
 ```
 
-### 3.3 间距系统
+**阴影使用规则:**
+- 面板/侧边栏: MUST NOT 使用阴影，使用 `--color-separator` 分割
+- 弹出层 (Popover/Dropdown): MUST 使用 `--shadow-md`
+- 模态框 (Dialog): MUST 使用 `--shadow-xl`
+- 卡片: MAY 使用 `--shadow-sm`（默认不用，仅悬停时可选）
+
+### 3.8 间距系统
 
 ```css
 --space-0: 0px;
@@ -176,71 +267,19 @@
 --space-20: 80px;    /* 页面间距 */
 ```
 
-### 3.4 圆角系统
+### 3.9 圆角系统
 
 ```css
 --radius-none: 0px;
---radius-sm: 4px;        /* 输入框、小按钮 */
---radius-md: 8px;        /* 一般按钮、弹窗 */
---radius-lg: 12px;       /* 对话框 */
---radius-xl: 16px;       /* 大卡片 */
---radius-2xl: 24px;      /* 特大卡片 */
---radius-full: 9999px;   /* 胶囊按钮、头像 */
+--radius-sm: 4px;        /* 输入框、小按钮、列表项 */
+--radius-md: 8px;        /* 一般按钮、下拉菜单 */
+--radius-lg: 12px;       /* 对话框、弹窗 */
+--radius-xl: 16px;       /* 卡片 */
+--radius-2xl: 24px;      /* 大卡片、面板 */
+--radius-full: 9999px;   /* 胶囊按钮、头像、标签 */
 ```
 
-### 3.5 字体系统
-
-```css
-/* 字体族 */
---font-family-ui: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
---font-family-body: 'Lora', 'Crimson Pro', Georgia, serif;
---font-family-mono: 'JetBrains Mono', 'Fira Code', Consolas, monospace;
-
-/* 字号 */
---font-size-xs: 10px;    /* 标签、徽章 */
---font-size-sm: 11px;    /* 辅助文字 */
---font-size-base: 13px;  /* 正文（UI） */
---font-size-md: 14px;    /* 正文（编辑器） */
---font-size-lg: 16px;    /* 小标题 */
---font-size-xl: 18px;    /* 标题 */
---font-size-2xl: 24px;   /* 大标题 */
---font-size-3xl: 32px;   /* 特大标题 */
-
-/* 字重 */
---font-weight-normal: 400;
---font-weight-medium: 500;
---font-weight-semibold: 600;
-
-/* 行高 */
---line-height-tight: 1.2;
---line-height-normal: 1.5;
---line-height-relaxed: 1.6;
---line-height-loose: 1.8;
-
-/* 字间距 */
---letter-spacing-tight: -0.02em;
---letter-spacing-normal: 0;
---letter-spacing-wide: 0.05em;
---letter-spacing-wider: 0.1em;    /* 大写标签 */
-```
-
-### 3.6 阴影系统
-
-```css
-/* 深色主题阴影 */
---shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
---shadow-md: 0 4px 8px rgba(0, 0, 0, 0.4);
---shadow-lg: 0 8px 16px rgba(0, 0, 0, 0.5);
---shadow-xl: 0 16px 32px rgba(0, 0, 0, 0.6);
-
-/* 浅色主题阴影 */
---shadow-sm-light: 0 1px 2px rgba(0, 0, 0, 0.05);
---shadow-md-light: 0 4px 8px rgba(0, 0, 0, 0.08);
---shadow-lg-light: 0 8px 16px rgba(0, 0, 0, 0.1);
---shadow-xl-light: 0 16px 32px rgba(0, 0, 0, 0.15);
-```
-
-### 3.7 动效系统
+### 3.10 动效系统
 
 ```css
 /* 缓动曲线 */
@@ -250,7 +289,8 @@
 --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
 
 /* 时长 */
---duration-fast: 100ms;      /* 微交互（hover） */
+--duration-instant: 50ms;    /* 即时反馈 */
+--duration-fast: 100ms;      /* 微交互（hover 颜色变化） */
 --duration-normal: 200ms;    /* 标准过渡 */
 --duration-slow: 300ms;      /* 面板展开/折叠 */
 --duration-slower: 500ms;    /* 页面切换 */
@@ -258,66 +298,133 @@
 
 ---
 
-## 4. 组件规范
+## 4. 字体系统与 Typography 映射
 
-### 4.1 按钮
+### 4.1 字体族
+
+```css
+--font-family-ui: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+--font-family-body: 'Lora', 'Crimson Pro', Georgia, serif;
+--font-family-mono: 'JetBrains Mono', 'Fira Code', Consolas, monospace;
+```
+
+### 4.2 Typography 映射表 (MUST 遵守)
+
+| 用途 | 字体族 | 字号 | 字重 | 行高 | 字间距 |
+|------|--------|------|------|------|--------|
+| 页面标题 | ui | 24px | 600 | 1.2 | -0.02em |
+| 卡片标题 | ui | 16px | 600 | 1.3 | -0.01em |
+| 小标题 | ui | 14px | 500 | 1.4 | 0 |
+| UI 正文 | ui | 13px | 400 | 1.5 | 0 |
+| 编辑器正文 | body | 16px | 400 | 1.8 | 0 |
+| 辅助信息 | ui | 12px | 400 | 1.4 | 0 |
+| 大写标签 | ui | 10px | 500 | 1.2 | 0.1em |
+| 侧栏树节点 | ui | 13px | 400 | 1.3 | 0 |
+| 状态栏 | ui | 11px | 400 | 1.2 | 0 |
+| 代码/等宽 | mono | 13px | 400 | 1.5 | 0 |
+
+---
+
+## 5. 层级与 z-index 规范
+
+### 5.1 z-index Scale (MUST)
+
+```css
+--z-base: 0;           /* 默认层 */
+--z-sticky: 100;       /* 粘性元素（工具栏） */
+--z-dropdown: 200;     /* 下拉菜单 */
+--z-popover: 300;      /* 弹出层 */
+--z-modal: 400;        /* 模态框 */
+--z-toast: 500;        /* Toast 通知 */
+--z-tooltip: 600;      /* Tooltip */
+--z-max: 9999;         /* 紧急覆盖（调试用） */
+```
+
+### 5.2 Elevation 规则
+
+| 组件类型 | 分层方式 | z-index |
+|----------|----------|---------|
+| 面板/侧边栏 | 边框分割 (`--color-separator`) | base |
+| 卡片 | 边框分割，无阴影 | base |
+| 下拉菜单 | 阴影 (`--shadow-md`) | dropdown |
+| Popover | 阴影 (`--shadow-md`) | popover |
+| 模态框 | 阴影 (`--shadow-xl`) + 遮罩 | modal |
+| Toast | 阴影 (`--shadow-lg`) | toast |
+| Tooltip | 阴影 (`--shadow-sm`) | tooltip |
+
+---
+
+## 6. 组件规范
+
+### 6.1 按钮
+
+**变体 (MUST):**
 
 | 类型 | 背景 | 文字 | 边框 | 用途 |
 |------|------|------|------|------|
-| Primary | #ffffff | #080808 | 无 | 主要操作 |
-| Secondary | transparent | #ffffff | 1px #222222 | 次要操作 |
-| Ghost | transparent | #888888 | 无 | 轻量操作 |
-| Danger | transparent | #ff4444 | 1px #ff4444 | 危险操作 |
+| Primary | --color-fg-default | --color-fg-inverse | 无 | 主要操作 |
+| Secondary | transparent | --color-fg-default | 1px --color-border-default | 次要操作 |
+| Ghost | transparent | --color-fg-muted | 无 | 轻量操作 |
+| Danger | transparent | --color-error | 1px --color-error | 危险操作 |
 
-**尺寸:**
-| 尺寸 | 高度 | 内边距 | 字号 |
-|------|------|--------|------|
-| sm | 28px | 12px 水平 | 12px |
-| md | 36px | 16px 水平 | 13px |
-| lg | 44px | 20px 水平 | 14px |
+**尺寸 (MUST):**
 
-**状态:**
-- Hover: 背景变化 + translateY(-1px)
-- Active: 背景加深 + translateY(0)
-- Disabled: opacity: 0.5 + cursor: not-allowed
-- Loading: 显示 spinner + 禁用点击
+| 尺寸 | 高度 | 水平内边距 | 字号 | 圆角 |
+|------|------|------------|------|------|
+| sm | 28px | 12px | 12px | --radius-sm |
+| md | 36px | 16px | 13px | --radius-md |
+| lg | 44px | 20px | 14px | --radius-md |
 
-### 4.2 输入框
+**状态 (MUST):**
+- Default: 基础样式
+- Hover: 背景/边框颜色变化（MUST NOT 使用 translateY，避免布局漂移）
+- Active: 背景加深
+- Disabled: opacity: 0.5, cursor: not-allowed
+- Loading: 显示 spinner，禁用点击
+- Focus-visible: 显示 focus ring
 
-**基础样式:**
+**特例 - 允许 translateY 的场景 (MAY):**
+- 仅限 Hero 区域的大按钮 (lg + Primary)
+- 仅限单独放置、周围有足够空间的按钮
+- 列表中的按钮 MUST NOT 使用位移效果
+
+### 6.2 输入框
+
+**基础样式 (MUST):**
 ```css
 height: 40px;
 padding: 0 12px;
 background: var(--color-bg-surface);
 border: 1px solid var(--color-border-default);
 border-radius: var(--radius-sm);
-font-size: var(--font-size-base);
-color: var(--color-text-primary);
+font-size: 13px;
+color: var(--color-fg-default);
 ```
 
 **状态:**
 - Hover: border-color: var(--color-border-hover)
-- Focus: border-color: var(--color-border-focus) + 无 outline
-- Error: border-color: var(--color-error) + 底部显示错误文字
-- Disabled: opacity: 0.5 + cursor: not-allowed
+- Focus-visible: border-color: var(--color-border-focus) + focus ring
+- Error: border-color: var(--color-error) + 底部错误文字
+- Disabled: opacity: 0.5, cursor: not-allowed
 
-### 4.3 卡片
+### 6.3 卡片
 
 ```css
 background: var(--color-bg-surface);
 border: 1px solid var(--color-border-default);
-border-radius: var(--radius-xl);  /* 24px */
+border-radius: var(--radius-xl);  /* 16px */
 padding: var(--space-6);          /* 24px */
 ```
 
-**悬停效果:**
+**悬停效果 (MAY):**
 - border-color: var(--color-border-hover)
-- 可选: box-shadow 增加
+- 阴影: 默认不用，MAY 添加 --shadow-sm
 
-### 4.4 列表项
+### 6.4 列表项
 
 ```css
 height: 32px;                     /* 紧凑列表 */
+/* 或 */
 height: 40px;                     /* 标准列表 */
 padding: 0 12px;
 border-radius: var(--radius-sm);
@@ -330,37 +437,47 @@ border-radius: var(--radius-sm);
 
 ---
 
-## 5. 交互规范
+## 7. 交互规范
 
-### 5.1 悬停状态
+### 7.1 悬停状态 (MUST)
 
-所有可交互元素必须有悬停反馈:
-- 背景色变化
-- 或边框色变化
-- 或文字色变化
-- 过渡时长: 100ms
+所有可交互元素 MUST 有悬停反馈:
+- 背景色变化 或
+- 边框色变化 或
+- 文字色变化
+- 过渡时长: var(--duration-fast)
 
-### 5.2 聚焦状态
-
-- 键盘导航时显示明显的聚焦环
-- 聚焦环: 2px solid var(--color-border-focus)
-- 偏移: outline-offset: 2px
-
-### 5.3 拖拽交互
-
-**文件树拖拽:**
-- 拖拽开始: 源项目半透明 (opacity: 0.5)
-- 拖拽中: 目标位置显示蓝色指示线
-- 放置区域: 目标文件夹背景高亮
-
-**面板宽度拖拽:**
-- 手柄悬停: cursor: col-resize + 高亮
-- 拖拽中: 实时预览 + 显示当前宽度值
-
-### 5.4 滚动行为
+### 7.2 Focus 规范 (MUST)
 
 ```css
-/* 自定义滚动条 */
+/* 统一使用 :focus-visible */
+:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 var(--ring-focus-width) var(--color-ring-focus);
+}
+
+/* 输入框特殊处理：边框变化 + focus ring */
+input:focus-visible {
+  border-color: var(--color-border-focus);
+  box-shadow: 0 0 0 var(--ring-focus-width) var(--color-ring-focus);
+}
+```
+
+### 7.3 拖拽交互
+
+**文件树拖拽:**
+- 拖拽开始: 源项目 opacity: 0.5
+- 拖拽中: 目标位置显示 2px 蓝色指示线
+- 放置区域: 目标文件夹 background: var(--color-bg-hover)
+
+**面板宽度拖拽:**
+- 手柄悬停: cursor: col-resize, 分割线高亮
+- 拖拽中: 实时预览，MAY 显示当前宽度值
+
+### 7.4 滚动条 (MUST 跨浏览器)
+
+```css
+/* Webkit (Chrome, Safari, Edge) */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
@@ -375,9 +492,20 @@ border-radius: var(--radius-sm);
 ::-webkit-scrollbar-thumb:hover {
   background: var(--color-border-hover);
 }
+
+/* Firefox */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border-default) transparent;
+}
+
+/* 兜底：无自定义时允许系统默认 */
+@supports not (scrollbar-width: thin) {
+  /* 使用系统默认滚动条 */
+}
 ```
 
-### 5.5 键盘导航
+### 7.5 键盘导航 (MUST)
 
 | 按键 | 行为 |
 |------|------|
@@ -391,9 +519,32 @@ border-radius: var(--radius-sm);
 
 ---
 
-## 6. 面板配置
+## 8. 像素对齐规则
 
-### 6.1 左侧 Icon Bar (48px)
+### 8.1 图标对齐 (MUST)
+
+- Icon 尺寸: 24px (在 24x24 视口内)
+- 点击区域: 40px x 40px
+- 居中方式: MUST 使用 flexbox `align-items: center; justify-content: center;`
+- Optical alignment: 某些图标（如播放按钮）MAY 需要 1-2px 偏移补偿视觉重心
+
+### 8.2 1px 分割线 (MUST)
+
+- 使用 `--color-separator`（低 alpha 值）而非固定色值
+- 在 2x/3x DPR 屏幕上 MUST 保持 1px（物理像素）
+- 实现: `border-width: 1px;` 或 `height: 1px;`
+- MUST NOT 使用 0.5px（兼容性问题）
+
+### 8.3 文字基线对齐
+
+- 多个文字元素并排时 MUST 使用 `align-items: baseline`
+- 图标与文字并排时 SHOULD 使用 `align-items: center`，MAY 微调图标 `margin-top: -1px`
+
+---
+
+## 9. 面板配置
+
+### 9.1 左侧 Icon Bar (48px)
 
 按顺序排列:
 1. [files] 文件树 (默认)
@@ -404,43 +555,30 @@ border-radius: var(--radius-sm);
 6. [settings] 设置 (底部固定)
 
 **图标规格:**
-- 尺寸: 24px
-- 按钮区域: 40px × 40px
+- 图标尺寸: 24px
+- 按钮区域: 40px x 40px
 - 激活指示: 左侧 2px 白色条
 
-### 6.2 左侧 Sidebar
+### 9.2 左侧 Sidebar
 
 - **默认宽度**: 240px
 - **可拖拽范围**: 180px - 400px
-- **记忆用户偏好**: 是
+- **记忆用户偏好**: 见 §13 Preference Store
 - **默认展开的面板**: 记住上次使用
 
-### 6.3 右侧面板
+### 9.3 右侧面板
 
 - **默认宽度**: 320px（AI 和信息共用同一宽度）
 - **可拖拽范围**: 280px - 480px
-- **记忆用户偏好**: 是
+- **记忆用户偏好**: 见 §13 Preference Store
 - **切换方式**: 顶部标签 [AI] [信息]
 - **默认显示**: AI 面板
 
-**面板内容:**
-
-**AI 面板:**
-- 头部: 标签切换 + 新建对话 + 折叠按钮
-- 对话区: 消息列表（用户右对齐，AI 左对齐）
-- 底部: 多行输入框 + 发送按钮 + 技能选择
-
-**信息面板:**
-- 文档统计: 字数、阅读时间、创建/修改时间
-- 版本历史: 最近版本列表
-- 相关角色: 当前文档中的角色
-- 批注: 文档批注列表
-
 ---
 
-## 7. 快捷键规范
+## 10. 快捷键规范
 
-### 7.1 全局快捷键
+### 10.1 全局快捷键 (MUST)
 
 | 功能 | Mac | Windows | 说明 |
 |------|-----|---------|------|
@@ -453,7 +591,7 @@ border-radius: var(--radius-sm);
 | 新建项目 | Cmd+Shift+N | Ctrl+Shift+N | 新建项目 |
 | 保存 | Cmd+S | Ctrl+S | 手动保存 |
 
-### 7.2 编辑器快捷键
+### 10.2 编辑器快捷键 (MUST)
 
 | 功能 | Mac | Windows |
 |------|-----|---------|
@@ -469,9 +607,123 @@ border-radius: var(--radius-sm);
 
 ---
 
-## 8. 状态显示
+## 11. 组件契约（Props/State/Events）
 
-### 8.1 空状态
+### 11.1 Sidebar
+
+```typescript
+interface SidebarProps {
+  width: number;                    // 当前宽度
+  minWidth?: number;                // 最小宽度，默认 180
+  maxWidth?: number;                // 最大宽度，默认 400
+  collapsed?: boolean;              // 是否折叠
+  activePanel: 'files' | 'outline' | 'characters' | 'media' | 'graph' | 'settings';
+  onWidthChange: (width: number) => void;
+  onCollapsedChange: (collapsed: boolean) => void;
+  onPanelChange: (panel: string) => void;
+}
+```
+
+### 11.2 Panel (右侧面板)
+
+```typescript
+interface PanelProps {
+  width: number;
+  minWidth?: number;                // 默认 280
+  maxWidth?: number;                // 默认 480
+  collapsed?: boolean;
+  activeTab: 'ai' | 'info';
+  onWidthChange: (width: number) => void;
+  onCollapsedChange: (collapsed: boolean) => void;
+  onTabChange: (tab: 'ai' | 'info') => void;
+}
+```
+
+### 11.3 FileTree
+
+```typescript
+interface FileTreeProps {
+  items: FileTreeItem[];
+  selectedId?: string;
+  expandedIds: string[];
+  onSelect: (id: string) => void;
+  onExpand: (id: string) => void;
+  onCollapse: (id: string) => void;
+  onRename: (id: string, newName: string) => void;
+  onDelete: (id: string) => void;
+  onMove: (id: string, targetId: string) => void;
+  onContextMenu: (id: string, event: React.MouseEvent) => void;
+}
+
+interface FileTreeItem {
+  id: string;
+  name: string;
+  type: 'file' | 'folder';
+  children?: FileTreeItem[];
+}
+```
+
+### 11.4 CommandPalette
+
+```typescript
+interface CommandPaletteProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  items: CommandItem[];
+  recentItems?: CommandItem[];
+  onSelect: (item: CommandItem) => void;
+}
+
+interface CommandItem {
+  id: string;
+  label: string;
+  icon?: string;
+  shortcut?: string;
+  category?: 'file' | 'command' | 'recent';
+}
+```
+
+### 11.5 Dialog
+
+```typescript
+interface DialogProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  title: string;
+  description?: string;
+  children: React.ReactNode;
+  footer?: React.ReactNode;
+  // 关闭行为
+  closeOnEscape?: boolean;          // 默认 true
+  closeOnOverlayClick?: boolean;    // 默认 true
+}
+```
+
+### 11.6 Toast
+
+```typescript
+interface ToastProps {
+  id: string;
+  type: 'info' | 'success' | 'warning' | 'error';
+  title: string;
+  description?: string;
+  duration?: number;                // 默认 5000ms
+  action?: {
+    label: string;
+    onClick: () => void;
+  };
+}
+
+// 使用方式
+toast.info('已保存');
+toast.error('保存失败', { description: '网络连接超时' });
+```
+
+---
+
+## 12. 状态显示
+
+### 12.1 空状态 (MUST)
 
 | 场景 | 显示内容 | 操作 |
 |------|----------|------|
@@ -480,119 +732,133 @@ border-radius: var(--radius-sm);
 | 空搜索结果 | 插图 + "未找到匹配结果" | 修改关键词建议 |
 | 空角色列表 | 插图 + "暂无角色" | 创建角色按钮 |
 
-### 8.2 加载状态
+### 12.2 加载状态 (MUST)
 
 - **顶部进度条**: 2px 高，窗口最顶部，动画滚动
-- **内容骨架屏**: 使用灰色占位块模拟内容形状
+- **内容骨架屏**: 使用 --color-bg-hover 占位块模拟内容形状
 - **按钮 Loading**: 显示 spinner，禁用点击
 
-### 8.3 错误状态
+### 12.3 错误状态 (MUST)
 
-- **内联错误**: 输入框下方红色文字
-- **Toast 通知**: 右上角短暂显示
+- **内联错误**: 输入框下方红色文字，使用 --color-error
+- **Toast 通知**: 右上角短暂显示，5s 后消失
 - **错误对话框**: 严重错误，需用户确认
 
 ---
 
-## 9. 文件系统
+## 13. Preference Store
 
-### 9.1 文件类型
+### 13.1 存储抽象 (MUST)
 
-| 类型 | 图标 | 扩展名 | 说明 |
-|------|------|--------|------|
-| 章节 | file | .md | 小说主体内容 |
-| 角色 | user | .character.md | 角色卡片 |
-| 笔记 | note | .note.md | 随手记录 |
-| 世界观 | globe | .world.md | 设定/地点/物品 |
-| 大纲 | list | .outline.md | 结构规划 |
-| 资料 | book | .ref.md | 参考材料 |
+```typescript
+interface PreferenceStore {
+  get<T>(key: string): T | null;
+  set<T>(key: string, value: T): void;
+  remove(key: string): void;
+  clear(): void;
+}
 
-### 9.2 保存行为
+// 实现可选: localStorage / IndexedDB / electron-store
+// 默认使用 electron-store（Electron 环境）或 localStorage（Web 环境）
+```
 
-- **自动保存**: 停止输入 2 秒后自动保存
-- **保存状态显示**: 底部状态栏 "已保存" / "保存中..."
-- **手动保存**: Cmd/Ctrl+S
+### 13.2 Key 命名规范 (MUST)
 
-### 9.3 版本历史
+```
+格式: creonow.<category>.<name>
+版本: creonow.version = "1"
 
-- **自动快照**: 每次自动保存创建（保留最近 100 个）
-- **手动版本**: 用户可标记重要版本，添加描述
-- **差异对比**: 左右分栏，红色删除/绿色新增
+示例:
+- creonow.layout.sidebarWidth
+- creonow.layout.panelWidth
+- creonow.layout.sidebarCollapsed
+- creonow.layout.panelCollapsed
+- creonow.layout.activePanel
+- creonow.layout.activePanelTab
+- creonow.editor.fontSize
+- creonow.editor.fontFamily
+- creonow.theme.mode (system | light | dark)
+```
 
-### 9.4 导出
+### 13.3 版本迁移 (MUST)
 
-支持格式: Word (.docx)、PDF、Markdown (.md)、纯文本 (.txt)、电子书 (.epub)
+```typescript
+const CURRENT_VERSION = '1';
 
----
-
-## 10. 功能深度
-
-### 10.1 AI 面板
-
-**完整功能包含:**
-- 多轮对话（支持上下文）
-- 代码块渲染（语法高亮 + 复制 + 应用）
-- 一键应用到编辑器（插入/替换）
-- 技能选择器（写作助手/续写/润色/翻译等）
-- 上下文管理（选择哪些内容发给 AI）
-- 流式输出（打字机效果）
-
-### 10.2 知识图谱
-
-**完整功能包含:**
-- 自定义节点类型（角色/地点/事件/物品/自定义）
-- 节点颜色区分
-- 自由编辑关系（拖拽连线）
-- 关系标签（类型 + 描述）
-- 可视化网络（力导向布局）
-- 筛选器（按类型过滤）
-- 缩放和平移
-- 点击节点跳转详情
-
-### 10.3 角色管理
-
-**完整功能包含:**
-- 详细角色卡片（姓名/年龄/身份/外貌/性格）
-- 头像（上传或 AI 生成）
-- 性格标签
-- 角色关系（与其他角色）
-- 出场统计（出现在哪些章节）
-- 关系图可视化
-- 时间线（角色事件）
+function migratePreferences(): void {
+  const storedVersion = store.get('creonow.version');
+  if (storedVersion !== CURRENT_VERSION) {
+    // 执行迁移逻辑
+    // ...
+    store.set('creonow.version', CURRENT_VERSION);
+  }
+}
+```
 
 ---
 
-## 11. 设计稿清单
+## 14. 验收清单
+
+### 14.1 像素验收 (MUST 全部通过)
+
+- [ ] 所有间距为 4px 的倍数
+- [ ] Icon Bar 宽度为 48px
+- [ ] 图标尺寸为 24px，点击区域为 40x40px
+- [ ] 分割线使用 --color-separator，1px 宽
+- [ ] 卡片圆角为 --radius-xl (16px)
+- [ ] 按钮圆角按尺寸使用正确的 radius
+- [ ] 输入框高度为 40px
+
+### 14.2 交互验收 (MUST 全部通过)
+
+- [ ] 所有可点击元素有 hover 状态
+- [ ] 键盘导航时显示 focus-visible ring
+- [ ] 鼠标点击不显示 focus ring
+- [ ] 面板宽度可拖拽调整
+- [ ] 双击拖拽手柄恢复默认宽度
+- [ ] 面板宽度变化后持久化
+- [ ] 所有快捷键正常工作
+
+### 14.3 主题验收 (MUST 全部通过)
+
+- [ ] 深色主题下所有颜色使用 CSS Variable
+- [ ] 浅色主题下所有颜色使用 CSS Variable
+- [ ] 主题切换无闪烁
+- [ ] 跟随系统主题自动切换
+
+---
+
+## 15. 设计稿清单
 
 ### 已有设计稿（深色主题，19个）
 
 | 编号 | 文件名 | 用途 | 状态 |
 |------|--------|------|------|
-| 01 | 01-login.html | 登录页 | ✅ 采用 |
-| 02 | 02-onboarding.html | 引导页 | ✅ 采用 |
-| 03 | 03-dashboard-bento-cards.html | Dashboard 大卡片 | ⏸ 备选 |
-| 04 | 04-dashboard-list-progress.html | Dashboard 列表 | ⏸ 备选 |
-| 05 | 05-dashboard-sidebar-full.html | Dashboard 侧边栏 | ✅ 采用 |
-| 06 | 06-dashboard-sidebar-dark.html | Dashboard 深色 | ⏸ 备选 |
-| 07 | 07-editor-simple.html | 禅模式参考 | ✅ 参考 |
-| 08 | 08-editor-workspace.html | 编辑器工作区 | ⏸ 备选 |
-| 09 | 09-editor-full-ide.html | 编辑器完整版 | ✅ 采用 |
-| 10 | 10-settings.html | 设置页 | ✅ 采用 |
-| 11 | 11-analytics.html | 数据分析 | ✅ 采用 |
-| 12 | 12-sidebar-filetree.html | 文件树 | ✅ 采用 |
-| 13 | 13-sidebar-outline.html | 大纲视图 | ✅ 采用 |
-| 14 | 14-ai-panel.html | AI 面板 | ✅ 采用 |
-| 15 | 15-info-panel.html | 信息面板 | ✅ 采用 |
-| 16 | 16-create-project-dialog.html | 创建项目 | ✅ 采用 |
-| 17 | 17-command-palette.html | 命令面板 | ✅ 采用 |
-| 18 | 18-character-manager.html | 角色管理 | ✅ 采用 |
-| 19 | 19-knowledge-graph.html | 知识图谱 | ✅ 采用 |
+| 01 | 01-login.html | 登录页 | 采用 |
+| 02 | 02-onboarding.html | 引导页 | 采用 |
+| 03 | 03-dashboard-bento-cards.html | Dashboard 大卡片 | 备选 |
+| 04 | 04-dashboard-list-progress.html | Dashboard 列表 | 备选 |
+| 05 | 05-dashboard-sidebar-full.html | Dashboard 侧边栏 | 采用 |
+| 06 | 06-dashboard-sidebar-dark.html | Dashboard 深色 | 备选 |
+| 07 | 07-editor-simple.html | 禅模式参考 | 参考 |
+| 08 | 08-editor-workspace.html | 编辑器工作区 | 备选 |
+| 09 | 09-editor-full-ide.html | 编辑器完整版 | 采用 |
+| 10 | 10-settings.html | 设置页 | 采用 |
+| 11 | 11-analytics.html | 数据分析 | 采用 |
+| 12 | 12-sidebar-filetree.html | 文件树 | 采用 |
+| 13 | 13-sidebar-outline.html | 大纲视图 | 采用 |
+| 14 | 14-ai-panel.html | AI 面板 | 采用 |
+| 15 | 15-info-panel.html | 信息面板 | 采用 |
+| 16 | 16-create-project-dialog.html | 创建项目 | 采用 |
+| 17 | 17-command-palette.html | 命令面板 | 采用 |
+| 18 | 18-character-manager.html | 角色管理 | 采用 |
+| 19 | 19-knowledge-graph.html | 知识图谱 | 采用 |
 
 ### 待补充设计稿
 
-**浅色主题（P0）:** 所有现有设计稿的浅色版本（见 `LIGHT_THEME_PROMPTS.md`）
+**浅色主题 (P0):** 所有现有设计稿的浅色版本（见 `LIGHT_THEME_PROMPTS.md`）
 
-**缺失状态（P1）:**
+**缺失状态 (P1):**
 - 禅模式界面
 - 空状态（空项目、空文件树、空搜索）
 - 加载状态（顶部进度条、骨架屏）
@@ -601,7 +867,7 @@ border-radius: var(--radius-sm);
 - 版本对比视图
 - 导出对话框
 
-**缺失交互（P2）:**
+**缺失交互 (P2):**
 - 选中文字浮动工具栏
 - 选中文字 AI 按钮
 - 拖拽调整宽度指示器
@@ -609,7 +875,7 @@ border-radius: var(--radius-sm);
 
 ---
 
-## 12. 技术栈锁定
+## 16. 技术栈锁定 (MUST)
 
 | 类别 | 选型 | 版本 |
 |------|------|------|
@@ -625,19 +891,98 @@ border-radius: var(--radius-sm);
 
 ---
 
-## 附录: 如何使用本文档
+## 附录: 实现落点
 
-### 开发时参考顺序
+### A.1 文件结构
 
-1. **布局**: 第 1-2 节
-2. **样式**: 第 3 节 Design Tokens
-3. **组件**: 第 4 节 + 对应设计稿 HTML
-4. **交互**: 第 5 节
-5. **具体功能**: 第 6-10 节
+```
+apps/desktop/renderer/src/
+├── styles/
+│   ├── tokens.css          # Design Tokens (本文档 §3)
+│   ├── fonts.css           # 字体定义
+│   └── globals.css         # 全局样式 + 滚动条
+├── components/
+│   ├── primitives/         # 原子组件 (Button, Input, Card...)
+│   ├── patterns/           # 通用模式 (EmptyState, LoadingState...)
+│   └── layout/             # 布局组件 (AppShell, Sidebar, Panel...)
+├── features/               # 功能模块
+├── stores/                 # Zustand stores (含 PreferenceStore)
+└── lib/
+    └── preferences.ts      # Preference Store 实现
+```
 
-### 设计稿使用方式
+### A.2 Tailwind 映射
 
-1. 在浏览器中打开 `design/Variant/designs/XX-name.html`
-2. 使用开发者工具检查具体样式
-3. 提取颜色、间距、字体等到代码中
-4. 遵循本文档的 Design Tokens 变量命名
+```typescript
+// tailwind.config.ts
+export default {
+  theme: {
+    extend: {
+      colors: {
+        bg: {
+          base: 'var(--color-bg-base)',
+          surface: 'var(--color-bg-surface)',
+          raised: 'var(--color-bg-raised)',
+          hover: 'var(--color-bg-hover)',
+          active: 'var(--color-bg-active)',
+          selected: 'var(--color-bg-selected)',
+        },
+        fg: {
+          default: 'var(--color-fg-default)',
+          muted: 'var(--color-fg-muted)',
+          subtle: 'var(--color-fg-subtle)',
+          placeholder: 'var(--color-fg-placeholder)',
+          disabled: 'var(--color-fg-disabled)',
+          inverse: 'var(--color-fg-inverse)',
+        },
+        border: {
+          default: 'var(--color-border-default)',
+          hover: 'var(--color-border-hover)',
+          focus: 'var(--color-border-focus)',
+        },
+        // ... 其他颜色
+      },
+      spacing: {
+        // 使用 CSS Variables
+      },
+      borderRadius: {
+        sm: 'var(--radius-sm)',
+        md: 'var(--radius-md)',
+        lg: 'var(--radius-lg)',
+        xl: 'var(--radius-xl)',
+        '2xl': 'var(--radius-2xl)',
+        full: 'var(--radius-full)',
+      },
+      boxShadow: {
+        sm: 'var(--shadow-sm)',
+        md: 'var(--shadow-md)',
+        lg: 'var(--shadow-lg)',
+        xl: 'var(--shadow-xl)',
+      },
+      transitionTimingFunction: {
+        default: 'var(--ease-default)',
+      },
+      transitionDuration: {
+        fast: 'var(--duration-fast)',
+        normal: 'var(--duration-normal)',
+        slow: 'var(--duration-slow)',
+      },
+      zIndex: {
+        sticky: 'var(--z-sticky)',
+        dropdown: 'var(--z-dropdown)',
+        popover: 'var(--z-popover)',
+        modal: 'var(--z-modal)',
+        toast: 'var(--z-toast)',
+        tooltip: 'var(--z-tooltip)',
+      },
+    },
+  },
+};
+```
+
+### A.3 Radix UI 约束
+
+- MUST 使用 Radix UI 的无样式组件（Dialog, Popover, Dropdown, etc.）
+- MUST 通过 className 添加 Tailwind 类
+- MUST NOT 使用 Radix 的默认主题
+- SHOULD 封装成业务组件，统一样式
