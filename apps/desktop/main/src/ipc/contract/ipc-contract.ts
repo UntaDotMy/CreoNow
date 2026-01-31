@@ -58,6 +58,36 @@ const CREONOW_LIST_ITEM_SCHEMA = s.object({
   updatedAtMs: s.number(),
 });
 
+const SEARCH_FTS_ITEM_SCHEMA = s.object({
+  documentId: s.string(),
+  title: s.string(),
+  snippet: s.string(),
+  score: s.number(),
+});
+
+const SEARCH_SEMANTIC_ITEM_SCHEMA = s.object({
+  documentId: s.string(),
+  chunkId: s.optional(s.string()),
+  snippet: s.string(),
+  score: s.number(),
+});
+
+const RAG_RETRIEVE_ITEM_SCHEMA = s.object({
+  sourceRef: s.string(),
+  snippet: s.string(),
+  score: s.number(),
+});
+
+const RAG_RETRIEVE_DIAGNOSTICS_SCHEMA = s.object({
+  budgetTokens: s.number(),
+  usedTokens: s.number(),
+  droppedCount: s.number(),
+  trimmedCount: s.number(),
+  mode: s.literal("fulltext"),
+  degradedFrom: s.optional(s.literal("semantic")),
+  reason: s.optional(s.string()),
+});
+
 const REDACTION_EVIDENCE_SCHEMA = s.object({
   patternId: s.string(),
   sourceRef: s.string(),
@@ -269,6 +299,51 @@ export const ipcContract = {
             reason: s.string(),
           }),
         ),
+      }),
+    },
+    "search:fulltext": {
+      request: s.object({
+        projectId: s.string(),
+        query: s.string(),
+        limit: s.optional(s.number()),
+      }),
+      response: s.object({ items: s.array(SEARCH_FTS_ITEM_SCHEMA) }),
+    },
+    "search:semantic": {
+      request: s.object({
+        projectId: s.string(),
+        queryText: s.string(),
+        limit: s.optional(s.number()),
+      }),
+      response: s.object({ items: s.array(SEARCH_SEMANTIC_ITEM_SCHEMA) }),
+    },
+    "embedding:encode": {
+      request: s.object({
+        texts: s.array(s.string()),
+        model: s.optional(s.string()),
+      }),
+      response: s.object({
+        vectors: s.array(s.array(s.number())),
+        dimension: s.number(),
+      }),
+    },
+    "embedding:index": {
+      request: s.object({
+        documentId: s.string(),
+        contentHash: s.string(),
+      }),
+      response: s.object({ accepted: s.literal(true) }),
+    },
+    "rag:retrieve": {
+      request: s.object({
+        projectId: s.string(),
+        queryText: s.string(),
+        limit: s.optional(s.number()),
+        budgetTokens: s.optional(s.number()),
+      }),
+      response: s.object({
+        items: s.array(RAG_RETRIEVE_ITEM_SCHEMA),
+        diagnostics: RAG_RETRIEVE_DIAGNOSTICS_SCHEMA,
       }),
     },
     "kg:graph:get": {

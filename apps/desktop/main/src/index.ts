@@ -12,8 +12,11 @@ import { registerConstraintsIpcHandlers } from "./ipc/constraints";
 import { registerFileIpcHandlers } from "./ipc/file";
 import { registerJudgeIpcHandlers } from "./ipc/judge";
 import { registerKnowledgeGraphIpcHandlers } from "./ipc/knowledgeGraph";
+import { registerEmbeddingIpcHandlers } from "./ipc/embedding";
 import { registerMemoryIpcHandlers } from "./ipc/memory";
 import { registerProjectIpcHandlers } from "./ipc/project";
+import { registerRagIpcHandlers } from "./ipc/rag";
+import { registerSearchIpcHandlers } from "./ipc/search";
 import { registerSkillIpcHandlers } from "./ipc/skills";
 import { registerVersionIpcHandlers } from "./ipc/version";
 import { createMainLogger, type Logger } from "./logging/logger";
@@ -207,6 +210,24 @@ function registerIpcHandlers(deps: {
   });
 
   registerFileIpcHandlers({
+    ipcMain,
+    db: deps.db,
+    logger: deps.logger,
+  });
+
+  registerEmbeddingIpcHandlers({
+    ipcMain,
+    db: deps.db,
+    logger: deps.logger,
+  });
+
+  registerSearchIpcHandlers({
+    ipcMain,
+    db: deps.db,
+    logger: deps.logger,
+  });
+
+  registerRagIpcHandlers({
     ipcMain,
     db: deps.db,
     logger: deps.logger,
