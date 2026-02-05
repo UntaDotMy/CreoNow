@@ -1,6 +1,6 @@
 # P0-014: Storybook WSL-IP QA Gate（流程固化 + 证据格式）
 
-Status: in-progress
+Status: done
 
 ## Goal
 
@@ -36,15 +36,15 @@ Status: in-progress
 
 ## Acceptance Criteria
 
-- [ ] `pnpm -C apps/desktop storybook:wsl` 可启动 storybook 并从 Windows 浏览器用 `http://<WSL_IP>:6006` 打开
-- [ ] `scripts/wsl_storybook_url.sh` 输出格式固定：
-  - [ ] 打印 WSL_IP
-  - [ ] 打印完整 URL
-- [ ] RUN_LOG 证据格式固定且可复制粘贴（见 `design/08-test-and-qa-matrix.md` 的 Evidence 块）
+- [x] `pnpm -C apps/desktop storybook:wsl` 可启动 storybook 并从 Windows 浏览器用 `http://<WSL_IP>:6006` 打开
+- [x] `scripts/wsl_storybook_url.sh` 输出格式固定：
+  - [x] 打印 WSL_IP
+  - [x] 打印完整 URL
+- [x] RUN_LOG 证据格式固定且可复制粘贴（见 `design/08-test-and-qa-matrix.md` 的 Evidence 块）
 
 ## Tests
 
-- [ ]（可选）添加一个轻量脚本测试：验证输出非空且符合 URL 格式（不依赖网络）
+- [x] 脚本输出验证：`./scripts/wsl_storybook_url.sh` 输出非空且格式正确（WSL IP + URL）
 
 ## Edge cases & Failure modes
 
@@ -65,6 +65,13 @@ Status: in-progress
 
 ## Completion
 
-- Issue: TBD
-- PR: TBD
-- RUN_LOG: `openspec/_ops/task_runs/ISSUE-<N>.md`
+- Issue: #186
+- PR: https://github.com/Leeky1017/CreoNow/pull/187
+- RUN_LOG: `openspec/_ops/task_runs/ISSUE-186.md`
+
+### 完成摘要
+
+1. 添加 `storybook:wsl` script（绑定 0.0.0.0 以支持 Windows 浏览器访问）
+2. 新增 `scripts/wsl_storybook_url.sh`（动态输出 WSL IP 与访问 URL）
+3. 更新设计文档 04：回填真实脚本命令与启动方式
+4. 更新设计文档 08：添加快速启动命令与可复制粘贴的证据模板
