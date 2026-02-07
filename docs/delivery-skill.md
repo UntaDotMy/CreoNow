@@ -27,10 +27,14 @@ Commit type：`feat` / `fix` / `refactor` / `test` / `docs` / `chore` / `ci`
 
 1. **Spec-first + Rulebook-first**：任何功能变更必须先有 OpenSpec spec，并且 Rulebook task 必须存在且通过 `validate`。
 2. **红灯先行**：测试必须先失败再通过（Red → Green → Refactor），禁止先写实现再补测试。
-3. **证据落盘**：关键命令输入输出必须写入 RUN_LOG，禁止 silent failure。
-4. **门禁一致**：文档契约与 GitHub required checks 必须一致；不一致时必须阻断并升级。
-5. **门禁全绿 + 串行合并**：PR 必须通过 `ci`、`openspec-log-guard`、`merge-serial`，并启用 auto-merge。
-6. **控制面收口**：所有变更提交后必须合并回控制面 `main`，仅停留在 `task/*` 分支不算交付完成。
+3. **Change 文档 TDD 结构强制**：每个 `openspec/changes/<change>/tasks.md` 必须按固定顺序撰写 `Specification → TDD Mapping → Red → Green → Refactor → Evidence`。
+4. **Red 证据前置**：`TDD Mapping` 未建立 Scenario→测试映射，或未记录 Red 失败测试证据，不得进入 Green 实现。
+5. **多 change 执行顺序文档强制**：当活跃 change ≥ 2，必须维护 `openspec/changes/EXECUTION_ORDER.md`（执行模式、顺序、依赖、更新时间，精确到小时和分钟，格式 `YYYY-MM-DD HH:mm`）。
+6. **顺序文档同步强制**：任一活跃 change 的范围/依赖/状态变更时，必须同步更新 `EXECUTION_ORDER.md`。
+7. **证据落盘**：关键命令输入输出必须写入 RUN_LOG，禁止 silent failure。
+8. **门禁一致**：文档契约与 GitHub required checks 必须一致；不一致时必须阻断并升级。
+9. **门禁全绿 + 串行合并**：PR 必须通过 `ci`、`openspec-log-guard`、`merge-serial`，并启用 auto-merge。
+10. **控制面收口**：所有变更提交后必须合并回控制面 `main`，仅停留在 `task/*` 分支不算交付完成。
 
 ---
 

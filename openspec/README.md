@@ -21,6 +21,7 @@ openspec/
 │   ├── ipc/
 │   └── version-control/
 ├── changes/                ← 进行中的变更（Delta Specs）
+│   └── EXECUTION_ORDER.md  ← 多活跃 change 时的执行顺序（串行/并行、依赖、更新时间）
 └── _ops/
     └── task_runs/          ← RUN_LOGs（执行证据）
 ```

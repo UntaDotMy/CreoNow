@@ -56,6 +56,116 @@ def require_file(path: str) -> None:
         raise RuntimeError(f"[RUN_LOG] required file missing: {path}")
 
 
+REQUIRED_CHANGE_TASKS_HEADINGS: tuple[str, ...] = (
+    "## 1. Specification",
+    "## 2. TDD Mapping（先测前提）",
+    "## 3. Red（先写失败测试）",
+    "## 4. Green（最小实现通过）",
+    "## 5. Refactor（保持绿灯）",
+    "## 6. Evidence",
+)
+
+
+def list_active_changes(repo: str) -> list[str]:
+    changes_root = os.path.join(repo, "openspec", "changes")
+    if not os.path.isdir(changes_root):
+        return []
+    active: list[str] = []
+    for name in sorted(os.listdir(changes_root)):
+        if name.startswith(".") or name in {"archive", "_template"}:
+            continue
+        abs_path = os.path.join(changes_root, name)
+        if os.path.isdir(abs_path):
+            active.append(name)
+    return active
+
+
+def validate_tdd_first_change_tasks(repo: str, changed_files: set[str]) -> None:
+    targets = sorted(
+        path
+        for path in changed_files
+        if re.match(r"^openspec/changes/[^/]+/tasks\.md$", path) and not path.startswith("openspec/changes/archive/")
+    )
+    if not targets:
+        print("(skip) openspec change tasks TDD-structure check: no changed openspec/changes/*/tasks.md")
+        return
+
+    for rel_path in targets:
+        abs_path = os.path.join(repo, rel_path)
+        if not os.path.isfile(abs_path):
+            raise RuntimeError(f"[OPENSPEC_CHANGE] missing tasks file: {rel_path}")
+
+        with open(abs_path, "r", encoding="utf-8") as fp:
+            content = fp.read()
+
+        cursor = -1
+        for heading in REQUIRED_CHANGE_TASKS_HEADINGS:
+            idx = content.find(heading)
+            if idx < 0:
+                raise RuntimeError(
+                    f"[OPENSPEC_CHANGE] {rel_path} missing required heading: {heading}"
+                )
+            if idx <= cursor:
+                raise RuntimeError(
+                    f"[OPENSPEC_CHANGE] {rel_path} headings out of order: {heading}"
+                )
+            cursor = idx
+
+        if "未出现 Red（失败测试）不得进入实现" not in content:
+            raise RuntimeError(
+                f"[OPENSPEC_CHANGE] {rel_path} must contain Red-gate text: 未出现 Red（失败测试）不得进入实现"
+            )
+
+        if "Scenario" not in content or "映射" not in content:
+            raise RuntimeError(
+                f"[OPENSPEC_CHANGE] {rel_path} must include Scenario->测试映射要求 in TDD Mapping section"
+            )
+
+
+def validate_execution_order_doc(repo: str, changed_files: set[str]) -> None:
+    active_changes = list_active_changes(repo)
+    if len(active_changes) < 2:
+        print("(skip) execution order check: active changes < 2")
+        return
+
+    order_doc_rel = "openspec/changes/EXECUTION_ORDER.md"
+    order_doc_abs = os.path.join(repo, order_doc_rel)
+    if not os.path.isfile(order_doc_abs):
+        raise RuntimeError(
+            "[OPENSPEC_CHANGE] multiple active changes detected; missing openspec/changes/EXECUTION_ORDER.md"
+        )
+
+    with open(order_doc_abs, "r", encoding="utf-8") as fp:
+        content = fp.read()
+
+    for marker in ("更新时间", "## 执行策略", "## 执行顺序", "## 依赖说明"):
+        if marker not in content:
+            raise RuntimeError(
+                f"[OPENSPEC_CHANGE] {order_doc_rel} missing required section/field: {marker}"
+            )
+
+    updated_at = re.search(r"^更新时间：(\d{4}-\d{2}-\d{2} \d{2}:\d{2})$", content, re.MULTILINE)
+    if not updated_at:
+        raise RuntimeError(
+            f"[OPENSPEC_CHANGE] {order_doc_rel} 更新时间格式必须为 YYYY-MM-DD HH:mm"
+        )
+
+    for change_name in active_changes:
+        if change_name not in content:
+            raise RuntimeError(
+                f"[OPENSPEC_CHANGE] {order_doc_rel} must include active change: {change_name}"
+            )
+
+    active_change_touched = any(
+        any(path.startswith(f"openspec/changes/{change_name}/") for change_name in active_changes)
+        for path in changed_files
+    )
+    if active_change_touched and order_doc_rel not in changed_files:
+        raise RuntimeError(
+            "[OPENSPEC_CHANGE] active change content updated but openspec/changes/EXECUTION_ORDER.md not updated in this PR"
+        )
+
+
 def main() -> int:
     try:
         repo = git_root()
@@ -98,6 +208,10 @@ def main() -> int:
             for line in res.out.splitlines():
                 if line.strip():
                     changed_files.add(line.strip())
+
+        print("\n== OpenSpec change checks ==")
+        validate_tdd_first_change_tasks(repo, changed_files)
+        validate_execution_order_doc(repo, changed_files)
 
         prettier_exts = (
             ".cjs",

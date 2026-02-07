@@ -111,6 +111,17 @@
 - 主 spec（`openspec/specs/**/spec.md`）代表系统当前真实状态，禁止直接修改
 - 所有变更必须走 **Proposal → Apply → Archive** 流程
 - Delta Spec 中使用 `[ADDED]`/`[MODIFIED]`/`[REMOVED]` 标记
+- 当 `openspec/changes/` 中存在 2 个及以上活跃 change（不含 `archive/` 与 `_template/`）时，必须在根目录维护 `openspec/changes/EXECUTION_ORDER.md`
+- `EXECUTION_ORDER.md` 必须包含：执行模式（串行/并行）、明确顺序、依赖关系、更新时间（精确到小时和分钟，格式 `YYYY-MM-DD HH:mm`）
+- 任一活跃 change 的范围/依赖/状态变更时，必须同步更新 `EXECUTION_ORDER.md`
+- 每个 `openspec/changes/<change>/tasks.md` 必须按以下固定章节顺序撰写：
+  - `1. Specification`
+  - `2. TDD Mapping（先测前提）`
+  - `3. Red（先写失败测试）`
+  - `4. Green（最小实现通过）`
+  - `5. Refactor（保持绿灯）`
+  - `6. Evidence`
+- 若 `TDD Mapping` 未建立 Scenario→测试映射，或未记录 Red 失败证据，禁止进入实现
 - PR 合并后才能将 delta spec 归档到主 spec
 
 ---
@@ -136,6 +147,10 @@
 15. 禁止在 Rulebook task 不存在或 validate 失败时继续实现
 16. 禁止在 required checks 与交付规则文档不一致时宣称「门禁全绿」
 17. 禁止仅在 `task/*` 分支提交后宣称交付完成（必须收口到控制面 `main`）
+18. 禁止提交不符合固定 TDD 章节顺序的 `openspec/changes/*/tasks.md`
+19. 禁止在 `openspec/changes/*/tasks.md` 缺少 Red 失败证据要求时进入实现
+20. 禁止在 2 个及以上活跃 change 存在时缺失 `openspec/changes/EXECUTION_ORDER.md`
+21. 禁止活跃 change 变更后未同步更新 `openspec/changes/EXECUTION_ORDER.md`
 
 ---
 
@@ -329,6 +344,8 @@ openspec/
 ├── specs/                  ← 主规范（Source of Truth）
 │   └── <module>/spec.md
 ├── changes/                ← 进行中的变更（Delta Specs）
+│   ├── EXECUTION_ORDER.md  ← 多活跃 change 的执行顺序文档（>=2 时必需）
+│   ├── _template/          ← change 撰写模板（含固定 TDD tasks 结构）
 │   └── <change-name>/
 │       ├── proposal.md
 │       ├── tasks.md
