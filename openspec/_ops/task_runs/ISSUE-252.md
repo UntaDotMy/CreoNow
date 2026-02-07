@@ -48,3 +48,14 @@
 - Key output: 全部通过；`lint` 仅 4 条既有 warning（0 errors）。
 - Command: `scripts/agent_pr_preflight.sh`
 - Key output: 失败：`[RUN_LOG] PR field still placeholder ... ISSUE-252.md: (待回填)`（符合预期，待 PR 创建后自动回填）
+
+### 2026-02-07 16:40 +0000 delivery & merge
+
+- Command: `scripts/agent_pr_automerge_and_sync.sh`
+- Key output: 自动创建 PR #253、回填 RUN_LOG PR 链接、等待 checks 通过并自动合并。
+- Command: `gh pr view 253 --json number,state,mergedAt,url,mergeCommit`
+- Key output: `state=MERGED`，`mergedAt=2026-02-07T16:40:47Z`，`mergeCommit=d0ac8f105089b9c3a5c2d40a70e4d668bb333948`
+- Command: `rulebook task archive issue-252-openspec-change-archive-hard-gate`
+- Key output: `Task ... archived successfully`
+- Command: `scripts/agent_worktree_cleanup.sh 252 openspec-change-archive-hard-gate`
+- Key output: `OK: cleaned worktree ... and local branch ...`
