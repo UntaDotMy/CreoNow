@@ -30,19 +30,20 @@ Commit type：`feat` / `fix` / `refactor` / `test` / `docs` / `chore` / `ci`
 3. **证据落盘**：关键命令输入输出必须写入 RUN_LOG，禁止 silent failure。
 4. **门禁一致**：文档契约与 GitHub required checks 必须一致；不一致时必须阻断并升级。
 5. **门禁全绿 + 串行合并**：PR 必须通过 `ci`、`openspec-log-guard`、`merge-serial`，并启用 auto-merge。
+6. **控制面收口**：所有变更提交后必须合并回控制面 `main`，仅停留在 `task/*` 分支不算交付完成。
 
 ---
 
 ## 三、工作流阶段
 
-| 阶段          | 完成条件                                                        |
-| ------------- | --------------------------------------------------------------- |
-| 1. 任务准入   | Issue 已创建或认领，`N` 和 `SLUG` 已确定                        |
-| 2. 规格制定   | OpenSpec spec 已编写或更新；Rulebook task 已创建并通过 validate |
-| 3. 环境隔离   | Worktree 已创建，工作目录已切换                                 |
-| 4. 实现与测试 | 按 TDD 循环实现；所有测试通过；RUN_LOG 已记录                   |
-| 5. 提交与合并 | PR 已创建；auto-merge 已开启；三个 checks 全绿；PR 已确认合并   |
-| 6. 收口与归档 | 控制面已同步；worktree 已清理；Rulebook task 已归档             |
+| 阶段          | 完成条件                                                            |
+| ------------- | ------------------------------------------------------------------- |
+| 1. 任务准入   | Issue 已创建或认领，`N` 和 `SLUG` 已确定                            |
+| 2. 规格制定   | OpenSpec spec 已编写或更新；Rulebook task 已创建并通过 validate     |
+| 3. 环境隔离   | Worktree 已创建，工作目录已切换                                     |
+| 4. 实现与测试 | 按 TDD 循环实现；所有测试通过；RUN_LOG 已记录                       |
+| 5. 提交与合并 | PR 已创建；auto-merge 已开启；三个 checks 全绿；PR 已确认合并       |
+| 6. 收口与归档 | 控制面 `main` 已包含任务提交；worktree 已清理；Rulebook task 已归档 |
 
 ---
 
@@ -56,6 +57,7 @@ Commit type：`feat` / `fix` / `refactor` / `test` / `docs` / `chore` / `ci`
 | Spec 不存在或不完整                  | 必须先补 spec 并确认，禁止猜测实现                             |
 | Rulebook task 不存在或 validate 失败 | 阻断交付，先修复 Rulebook 再继续                               |
 | 非 `task/*` 分支提交 PR              | 可跳过 RUN_LOG，但 PR body 必须包含 `Skip-Reason:`             |
+| 改动仅停留在 `task/*` 分支           | 继续完成合并回 `main` 并更新 RUN_LOG 证据                      |
 | required checks 与本文件不一致       | 阻断交付并升级治理，禁止宣称“门禁全绿”                         |
 
 ---

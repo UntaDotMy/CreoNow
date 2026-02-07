@@ -10,6 +10,7 @@
 | 证据落盘（RUN_LOG）                | 外部 Skill §二 规则 3                            | `docs/delivery-skill.md` §二 规则 3 | `AGENTS.md` §3.3       | `openspec-log-guard.yml`                               |
 | 门禁一致（文档=远端）              | 外部 Skill §二 规则 4                            | `docs/delivery-skill.md` §二 规则 4 | `AGENTS.md` §3.4, §11  | branch protection required checks                      |
 | 门禁全绿 + auto-merge              | 外部 Skill §二 规则 5                            | `docs/delivery-skill.md` §二 规则 5 | `AGENTS.md` §3.4       | `ci.yml`, `merge-serial.yml`, `openspec-log-guard.yml` |
+| 控制面收口（必须回到 `main`）      | 外部 Skill §二 规则 6                            | `docs/delivery-skill.md` §二 规则 6 | `AGENTS.md` §4, §5.2   | `agent_pr_preflight.py`（分支与任务收口校验）          |
 | 非 task 分支必须 Skip-Reason       | 外部 Skill §四                                   | `docs/delivery-skill.md` §四        | `AGENTS.md` §11        | `openspec-log-guard.yml`                               |
 | gh 超时 3 次 + 升级                | 外部 Skill §四                                   | `docs/delivery-skill.md` §四        | `AGENTS.md` §11        | 执行规范（RUN_LOG 记录）                               |
 

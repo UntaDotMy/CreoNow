@@ -81,3 +81,17 @@
 - Key output: PR #243 created with `Closes #242`
 - Result: ✅ 通过
 - Evidence: `https://github.com/Leeky1017/CreoNow/pull/243`
+
+### 2026-02-07 22:25 main-closure-rule-update
+
+- Command: update `docs/delivery-skill.md`, `AGENTS.md`, `docs/delivery-rule-mapping.md`
+- Key output: 新增硬约束“所有改动必须合并回控制面 `main` 才算完成”；同步开发流程和禁止行为清单
+- Result: ✅ 通过
+- Evidence: `docs/delivery-skill.md`, `AGENTS.md`, `docs/delivery-rule-mapping.md`
+
+### 2026-02-07 22:26 formatting-and-rulebook-validate
+
+- Command: `pnpm exec prettier --write ... && pnpm exec prettier --check ...`; `rulebook task validate issue-242-cn-delivery-skill-v2-migration`
+- Key output: prettier check 全绿；Rulebook task valid（warning: No spec files found）
+- Result: ✅ 通过
+- Evidence: `AGENTS.md`, `docs/delivery-skill.md`, `rulebook/tasks/issue-242-cn-delivery-skill-v2-migration/.metadata.json`
