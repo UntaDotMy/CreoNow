@@ -99,3 +99,15 @@
 - Key output: all pass（`lint` 仅既有 warning，无 error）。
 - Command: `rulebook task validate issue-260-ipc-p1-ipc-testability-harness`
 - Key output: `Task ... is valid`（warning: No spec files found）。
+
+### 2026-02-08 10:49 +0800 PR delivery + controlplane sync
+
+- Command: `scripts/agent_pr_automerge_and_sync.sh`
+- Key output: preflight 全绿、自动开启 auto-merge、`PR #261` 合并完成并同步控制面 `main`。
+
+### 2026-02-08 10:49 +0800 Stage-6 closeout
+
+- Command: `rulebook task archive issue-260-ipc-p1-ipc-testability-harness`
+- Key output: `Task ... archived successfully`
+- Command: `scripts/agent_worktree_cleanup.sh 260 ipc-p1-ipc-testability-harness`
+- Key output: worktree 与本地 task 分支清理完成。
