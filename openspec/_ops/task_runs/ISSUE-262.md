@@ -99,3 +99,15 @@
 
 - Command: `pnpm typecheck && pnpm lint && pnpm contract:check && pnpm test:unit && pnpm test:ipc:acceptance`
 - Key output: all pass（`lint` 仅既有 warning，无 error）。
+
+### 2026-02-08 11:16 +0800 PR delivery + controlplane sync
+
+- Command: `scripts/agent_pr_automerge_and_sync.sh`
+- Key output: preflight 全绿、自动开启 auto-merge、`PR #263` 合并完成并同步控制面 `main`。
+
+### 2026-02-08 11:19 +0800 Stage-6 closeout
+
+- Command: `rulebook task archive issue-262-ipc-p2-acceptance-slo-and-benchmark-gates`
+- Key output: `Task ... archived successfully`
+- Command: `scripts/agent_worktree_cleanup.sh 262 ipc-p2-acceptance-slo-and-benchmark-gates --force`
+- Key output: worktree 与本地 task 分支清理完成。
