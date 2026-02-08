@@ -18,7 +18,7 @@
 
 ## Status
 
-- CURRENT: `IN_PROGRESS`（PR 已创建且 auto-merge 已开启，待 required checks 绿灯后自动合并）
+- CURRENT: `COMPLETED` — PR #274 已于 2026-02-08T07:52:11Z 自动合并到 `main`，三项 required checks 全部 SUCCESS
 
 ## Plan
 
@@ -204,4 +204,5 @@
 
 ## Next
 
-- 等待 required checks 全绿后合并收口 `main`，归档 change 与 Rulebook task。
+- ~~等待 required checks 全绿后合并收口 `main`，归档 change 与 Rulebook task。~~ DONE
+- Change 已归档至 `openspec/changes/archive/windows-e2e-startup-readiness/`。
