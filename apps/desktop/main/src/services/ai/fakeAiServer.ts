@@ -1,4 +1,4 @@
-import http from "node:http";
+﻿import http from "node:http";
 import type { AddressInfo } from "node:net";
 
 import type { Logger } from "../../logging/logger";
@@ -239,6 +239,21 @@ export async function startFakeAiServer(deps: {
     if (req.method === "GET" && req.url === "/health") {
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ ok: true }));
+      return;
+    }
+    if (req.method === "GET" && req.url === "/v1/models") {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(
+        JSON.stringify({
+          object: "list",
+          data: [
+            { id: "gpt-5.2", object: "model" },
+            { id: "deepseek", object: "model" },
+            { id: "claude-opus", object: "model" },
+            { id: "creo-w", object: "model" },
+          ],
+        }),
+      );
       return;
     }
 

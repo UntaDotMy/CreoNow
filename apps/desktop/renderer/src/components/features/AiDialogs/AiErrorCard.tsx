@@ -1,15 +1,23 @@
 import { useEffect, useState, useCallback, useRef } from "react";
+
 import type { AiErrorCardProps, AiErrorType } from "./types";
 
 /**
+
  * Card state for tracking visibility and loading
+
  */
+
 type CardState = "visible" | "dismissing" | "dismissed";
+
 type RetryState = "idle" | "loading" | "success" | "error";
 
 /**
+
  * Icon components for different error types
+
  */
+
 const WifiOffIcon = () => (
   <svg
     xmlns="http://www.w3.org/2000/svg"
@@ -95,8 +103,11 @@ const CloseIcon = () => (
 );
 
 /**
+
  * Loading spinner component
+
  */
+
 const Spinner = ({ className = "" }: { className?: string }) => (
   <svg
     className={`animate-spin ${className}`}
@@ -114,6 +125,7 @@ const Spinner = ({ className = "" }: { className?: string }) => (
       stroke="currentColor"
       strokeWidth="4"
     />
+
     <path
       className="opacity-75"
       fill="currentColor"
@@ -123,77 +135,112 @@ const Spinner = ({ className = "" }: { className?: string }) => (
 );
 
 /**
+
  * Get icon component by error type
+
  */
+
 function getIconByType(type: AiErrorType): JSX.Element {
   switch (type) {
     case "connection_failed":
       return <WifiOffIcon />;
+
     case "timeout":
       return <ClockIcon />;
+
     case "rate_limit":
       return <ThrottleIcon />;
+
     case "usage_limit":
       return <LimitIcon />;
+
     case "service_error":
       return <ServerIcon />;
+
     default:
       return <ThrottleIcon />;
   }
 }
 
 /**
+
  * Get icon background/text color by error type
+
  */
+
 function getIconColorsByType(type: AiErrorType): { bg: string; text: string } {
   switch (type) {
     case "connection_failed":
+    // fall through
+
     case "timeout":
+    // fall through
+
     case "rate_limit":
       return {
         bg: "bg-[var(--color-warning-subtle)]",
+
         text: "text-[var(--color-warning)]",
       };
+
     case "usage_limit":
       return {
         bg: "bg-[var(--color-warning-subtle)]",
+
         text: "text-[var(--color-warning)]",
       };
+
     case "service_error":
       return {
         bg: "bg-[var(--color-error-subtle)]",
+
         text: "text-[var(--color-error)]",
       };
+
     default:
       return {
         bg: "bg-[var(--color-warning-subtle)]",
+
         text: "text-[var(--color-warning)]",
       };
   }
 }
 
 /**
+
  * Get card border color by error type
+
  */
+
 function getBorderColorByType(type: AiErrorType): string {
   switch (type) {
     case "service_error":
       return "border-[var(--color-error)]/20";
+
     default:
       return "border-[var(--color-warning)]/20";
   }
 }
 
 /**
+
  * Card styles
+
  */
+
 const cardStyles = [
   "rounded-[var(--radius-lg)]",
+
   "p-3",
+
   "border",
+
   "relative",
+
   "transition-all",
+
   "duration-[var(--duration-normal)]",
+
   "ease-[var(--ease-default)]",
 ].join(" ");
 
@@ -201,58 +248,91 @@ const contentStyles = ["flex", "items-start", "gap-3"].join(" ");
 
 const iconContainerStyles = [
   "p-1.5",
+
   "rounded-[var(--radius-sm)]",
+
   "shrink-0",
+
   "mt-0.5",
 ].join(" ");
 
 const titleStyles = [
   "text-sm",
+
   "font-medium",
+
   "text-[var(--color-fg-default)]",
+
   "mb-0.5",
 ].join(" ");
 
 const descriptionStyles = [
   "text-xs",
+
   "text-[var(--color-fg-muted)]",
+
   "leading-snug",
+
   "mb-2",
 ].join(" ");
 
 const errorCodeStyles = [
   "text-[10px]",
+
   "font-mono",
+
   "text-[var(--color-error)]",
+
   "mb-2",
 ].join(" ");
 
 const countdownStyles = [
   "text-[10px]",
+
   "font-mono",
+
   "text-[var(--color-warning)]",
+
   "bg-[var(--color-warning-subtle)]",
+
   "inline-block",
+
   "px-1.5",
+
   "py-0.5",
+
   "rounded-[var(--radius-sm)]",
+
   "border",
+
   "border-[var(--color-warning)]/10",
+
   "mb-2",
 ].join(" ");
 
 const readyToRetryStyles = [
   "text-[10px]",
+
   "font-mono",
+
   "text-[var(--color-success)]",
+
   "bg-[var(--color-success-subtle)]",
+
   "inline-block",
+
   "px-1.5",
+
   "py-0.5",
+
   "rounded-[var(--radius-sm)]",
+
   "border",
+
   "border-[var(--color-success)]/10",
+
   "mb-2",
+
   "animate-pulse",
 ].join(" ");
 
@@ -260,123 +340,220 @@ const buttonContainerStyles = ["flex", "items-center", "gap-2"].join(" ");
 
 const retryButtonStyles = [
   "text-xs",
+
   "font-medium",
+
   "text-[var(--color-fg-default)]",
+
   "bg-[var(--color-bg-hover)]",
+
   "hover:bg-[var(--color-bg-active)]",
+
   "px-3",
+
   "py-1.5",
+
   "rounded-[var(--radius-sm)]",
+
   "transition-colors",
+
   "duration-[var(--duration-fast)]",
+
   "focus-visible:outline",
+
   "focus-visible:outline-[length:var(--ring-focus-width)]",
+
   "focus-visible:outline-offset-[var(--ring-focus-offset)]",
+
   "focus-visible:outline-[var(--color-ring-focus)]",
+
   "disabled:opacity-50",
+
   "disabled:cursor-not-allowed",
+
   "flex",
+
   "items-center",
+
   "gap-1.5",
 ].join(" ");
 
 const upgradeButtonStyles = [
   "text-xs",
+
   "font-medium",
+
   "text-[var(--color-bg-base)]",
+
   "bg-[var(--color-warning)]",
+
   "hover:bg-yellow-400",
+
   "px-3",
+
   "py-1.5",
+
   "rounded-[var(--radius-sm)]",
+
   "transition-colors",
+
   "duration-[var(--duration-fast)]",
+
   "focus-visible:outline",
+
   "focus-visible:outline-[length:var(--ring-focus-width)]",
+
   "focus-visible:outline-offset-[var(--ring-focus-offset)]",
+
   "focus-visible:outline-[var(--color-ring-focus)]",
 ].join(" ");
 
 const linkButtonStyles = [
   "text-xs",
+
   "font-medium",
+
   "text-[var(--color-fg-muted)]",
+
   "hover:text-[var(--color-fg-default)]",
+
   "px-2",
+
   "flex",
+
   "items-center",
+
   "gap-1",
+
   "transition-colors",
+
   "duration-[var(--duration-fast)]",
+
   "focus-visible:outline",
+
   "focus-visible:outline-[length:var(--ring-focus-width)]",
+
   "focus-visible:outline-offset-[var(--ring-focus-offset)]",
+
   "focus-visible:outline-[var(--color-ring-focus)]",
 ].join(" ");
 
 const dismissButtonStyles = [
   "absolute",
+
   "top-2",
+
   "right-2",
+
   "p-1",
+
   "rounded-[var(--radius-sm)]",
+
   "text-[var(--color-fg-muted)]",
+
   "hover:text-[var(--color-fg-default)]",
+
   "hover:bg-[var(--color-bg-hover)]",
+
   "transition-colors",
+
   "duration-[var(--duration-fast)]",
+
   "focus-visible:outline",
+
   "focus-visible:outline-[length:var(--ring-focus-width)]",
+
   "focus-visible:outline-offset-[var(--ring-focus-offset)]",
+
   "focus-visible:outline-[var(--color-ring-focus)]",
 ].join(" ");
 
 /**
+
  * AiErrorCard - Error state card for AI operations
+
  *
+
  * Displays different error states with appropriate icons and actions.
+
  * Features:
+
  * - Dismiss button with fade-out animation
+
  * - Retry loading state with spinner
+
  * - Countdown timer with "Ready to retry" state
+
  *
+
  * @example
+
  * ```tsx
+
  * <AiErrorCard
+
  *   error={{
+
  *     type: "connection_failed",
+
  *     title: "Connection Failed",
+
  *     description: "Unable to reach AI service.",
+
  *   }}
+
  *   onRetry={() => retryRequest()}
+
  *   onDismiss={() => hideError()}
+
  * />
+
  * ```
+
  */
+
 export function AiErrorCard({
   error,
+
   errorCodeTestId,
+
   onRetry,
+
   onUpgradePlan,
+
   onViewUsage,
+
   onCheckStatus,
+
   onDismiss,
+
   showDismiss = true,
+
   simulateDelay = 1500,
+
   retryWillSucceed = true,
+
   className = "",
 }: AiErrorCardProps): JSX.Element | null {
   // Initialize countdown from props - use a ref to track the initial value
+
   const initialCountdown =
     error.type === "rate_limit" ? (error.countdownSeconds ?? 0) : 0;
+
   const [countdown, setCountdown] = useState(initialCountdown);
+
   const [cardState, setCardState] = useState<CardState>("visible");
+
   const [retryState, setRetryState] = useState<RetryState>("idle");
+
   const [countdownComplete, setCountdownComplete] = useState(false);
+
   const prevCountdownRef = useRef(error.countdownSeconds);
 
   const iconColors = getIconColorsByType(error.type);
+
   const borderColor = getBorderColorByType(error.type);
+
   const bgColor =
     error.type === "service_error"
       ? "bg-[var(--color-error-subtle)]"
@@ -385,14 +562,17 @@ export function AiErrorCard({
         : "bg-[var(--color-error-subtle)]";
 
   // Countdown timer for rate limit errors
+
   useEffect(() => {
     if (error.type !== "rate_limit" || !error.countdownSeconds) {
       return;
     }
 
     // Only reset countdown if the countdownSeconds prop changed
+
     if (prevCountdownRef.current !== error.countdownSeconds) {
       prevCountdownRef.current = error.countdownSeconds;
+
       // Use functional update to avoid direct setState in effect
     }
 
@@ -400,9 +580,12 @@ export function AiErrorCard({
       setCountdown((prev) => {
         if (prev <= 1) {
           clearInterval(interval);
+
           setCountdownComplete(true);
+
           return 0;
         }
+
         return prev - 1;
       });
     }, 1000);
@@ -415,9 +598,12 @@ export function AiErrorCard({
 
   const handleDismiss = useCallback(() => {
     setCardState("dismissing");
+
     // Wait for animation to complete
+
     setTimeout(() => {
       setCardState("dismissed");
+
       onDismiss?.();
     }, 300);
   }, [onDismiss]);
@@ -428,17 +614,22 @@ export function AiErrorCard({
     setRetryState("loading");
 
     // Simulate async retry operation
+
     await new Promise((resolve) => setTimeout(resolve, simulateDelay));
 
     if (retryWillSucceed) {
       setRetryState("success");
+
       // Auto-dismiss on success
+
       setTimeout(() => {
         handleDismiss();
       }, 500);
     } else {
       setRetryState("error");
+
       // Reset to idle after showing error
+
       setTimeout(() => {
         setRetryState("idle");
       }, 2000);
@@ -448,30 +639,37 @@ export function AiErrorCard({
   }, [onRetry, simulateDelay, retryWillSucceed, handleDismiss, retryState]);
 
   // Don't render if dismissed
+
   if (cardState === "dismissed") {
     return null;
   }
 
   // Opacity class for dismissing animation
+
   const opacityClass =
     cardState === "dismissing" ? "opacity-0 scale-95" : "opacity-100 scale-100";
 
   // Get retry button text and state
+
   const getRetryButtonContent = () => {
     if (retryState === "loading") {
       return (
         <>
           <Spinner />
+
           <span>Retrying...</span>
         </>
       );
     }
+
     if (retryState === "success") {
       return <span className="text-[var(--color-success)]">Success!</span>;
     }
+
     if (retryState === "error") {
       return <span className="text-[var(--color-error)]">Failed</span>;
     }
+
     return <span>{error.type === "timeout" ? "Try Again" : "Retry"}</span>;
   };
 
@@ -480,6 +678,7 @@ export function AiErrorCard({
       className={`${cardStyles} ${bgColor} ${borderColor} ${opacityClass} ${className}`}
     >
       {/* Dismiss button */}
+
       {showDismiss && (
         <button
           type="button"
@@ -493,6 +692,7 @@ export function AiErrorCard({
 
       <div className={contentStyles}>
         {/* Icon */}
+
         <div
           className={`${iconContainerStyles} ${iconColors.bg} ${iconColors.text}`}
         >
@@ -500,11 +700,14 @@ export function AiErrorCard({
         </div>
 
         {/* Content */}
+
         <div className="flex-1 pr-6">
           <h4 className={titleStyles}>{error.title}</h4>
+
           <p className={descriptionStyles}>{error.description}</p>
 
           {/* Error code for service errors */}
+
           {error.errorCode && (
             <div data-testid={errorCodeTestId} className={errorCodeStyles}>
               {error.errorCode}
@@ -512,11 +715,13 @@ export function AiErrorCard({
           )}
 
           {/* Countdown for rate limit */}
+
           {error.type === "rate_limit" && countdown > 0 && (
             <div className={countdownStyles}>Try again in {countdown}s</div>
           )}
 
           {/* Ready to retry message when countdown completes */}
+
           {error.type === "rate_limit" &&
             countdownComplete &&
             countdown === 0 && (
@@ -524,8 +729,10 @@ export function AiErrorCard({
             )}
 
           {/* Actions */}
+
           <div className={buttonContainerStyles}>
             {/* Usage limit: Upgrade Plan + View Usage */}
+
             {error.type === "usage_limit" && (
               <>
                 {onUpgradePlan && (
@@ -537,6 +744,7 @@ export function AiErrorCard({
                     Upgrade Plan
                   </button>
                 )}
+
                 {onViewUsage && (
                   <button
                     type="button"
@@ -550,6 +758,7 @@ export function AiErrorCard({
             )}
 
             {/* Service error: Retry + Check Status */}
+
             {error.type === "service_error" && (
               <>
                 {onRetry && (
@@ -562,6 +771,7 @@ export function AiErrorCard({
                     {getRetryButtonContent()}
                   </button>
                 )}
+
                 {onCheckStatus && (
                   <button
                     type="button"
@@ -576,6 +786,7 @@ export function AiErrorCard({
             )}
 
             {/* Connection/Timeout/Rate Limit: Retry button */}
+
             {(error.type === "connection_failed" ||
               error.type === "timeout" ||
               error.type === "rate_limit") &&
