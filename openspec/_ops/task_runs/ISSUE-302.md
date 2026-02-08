@@ -15,15 +15,12 @@
 
 ## Status
 
-- CURRENT: 进行中（Green 验证完成；preflight 因 RUN_LOG PR 占位符被阻断，待创建 PR 回填真实链接后放行）。
+- CURRENT: 已完成（PR #304 已合并；`ci` / `openspec-log-guard` / `merge-serial` 全绿；控制面 `main` 已同步到 `origin/main`）。
 
 ## Plan
 
-- 补全 Rulebook task 与 RUN_LOG。
-- 完成依赖同步检查（Dependency Sync Check）并落盘。
-- 逐组实现 Scenario 映射测试：实体 → 关系 → 查询 → 异常/容量 → 基线性能。
-- 创建 PR 并回填 RUN_LOG PR 真实链接后重跑 preflight。
-- 开启 auto-merge，等待 `ci` / `openspec-log-guard` / `merge-serial` 全绿后合并。
+- 全量任务已执行完成并完成门禁合并。
+- 进入收口阶段：控制面同步、worktree 清理、Rulebook task 归档（已完成）。
 
 ## Runs
 
@@ -110,7 +107,7 @@
 - Command:
   - `edit apps/desktop/main/src/services/kg/kgService.ts`
   - `edit apps/desktop/main/src/ipc/knowledgeGraph.ts`
-  - `create apps/desktop/main/src/db/migrations/0012_knowledge_graph_p0.sql`
+  - `create apps/desktop/main/src/db/migrations/0013_knowledge_graph_p0.sql`
   - `edit apps/desktop/main/src/db/init.ts`
   - `edit apps/desktop/main/src/ipc/contract/{schema.ts,ipc-contract.ts}`
   - `edit scripts/contract-generate.ts`
@@ -173,3 +170,68 @@
   - `PRE-FLIGHT FAILED: [RUN_LOG] PR field still placeholder ... (待回填)`
 - Resolution:
   - 下一步通过 `scripts/agent_pr_automerge_and_sync.sh` 创建 PR 并自动回填 RUN_LOG PR 链接后重跑 preflight。
+
+### 2026-02-08 21:44 +0800 自动创建 PR、回填 RUN_LOG、preflight 放行
+
+- Command:
+  - `scripts/agent_pr_automerge_and_sync.sh`
+- Exit code: `1`（脚本在首次 `gh pr checks --watch` 时因“checks 尚未上报”提前退出，后续改为人工续跑）
+- Key output:
+  - 创建 PR：`https://github.com/Leeky1017/CreoNow/pull/304`
+  - 自动提交 RUN_LOG 回填：`docs: backfill run log PR link (#302)`
+  - preflight 全量通过（含 `pnpm typecheck`、`pnpm lint`、`pnpm contract:check`、`pnpm test:unit`）
+
+### 2026-02-08 21:46-21:50 +0800 与最新 main 冲突对齐并回推 PR 分支
+
+- Command:
+  - `git fetch origin main`
+  - `git rebase origin/main`
+  - 冲突解法：
+    - KG 迁移重编号：`0012_knowledge_graph_p0.sql -> 0013_knowledge_graph_p0.sql`
+    - 合并 `package.json`（保留 memory + KG 测试入口）
+    - 合并 `ipc-contract.ts`（保留 memory schema + KG schema）
+    - `pnpm contract:generate`
+  - `git push`（通过合并远端分支历史，避免强推）
+- Exit code: `0`
+- Key output:
+  - PR `mergeStateStatus` 从 `DIRTY` 修复为可合并状态，auto-merge 继续生效。
+
+### 2026-02-08 21:51-21:54 +0800 门禁全绿并自动合并
+
+- Command:
+  - `gh pr checks 304 --watch`
+  - `gh pr view 304 --json state,mergedAt,mergeStateStatus`
+- Exit code: `0`
+- Key output:
+  - `ci`: `pass`
+  - `openspec-log-guard`: `pass`
+  - `merge-serial`: `pass`
+  - PR 状态：`MERGED`
+  - `mergedAt`: `2026-02-08T13:53:59Z`（北京时间 `2026-02-08 21:53:59 +0800`）
+
+### 2026-02-08 21:55 +0800 控制面 main 收口
+
+- Command:
+  - `git -C /home/leeky/work/CreoNow fetch origin main`
+  - `git -C /home/leeky/work/CreoNow pull --ff-only origin main`
+  - `git -C /home/leeky/work/CreoNow rev-parse main`
+  - `git -C /home/leeky/work/CreoNow rev-parse origin/main`
+- Exit code: `0`
+- Key output:
+  - 本地 `main` 与 `origin/main` 同步到同一提交：`8050b01b848b00bf98b74b0638d0a2b20e1b2b99`
+
+### 2026-02-08 21:56 +0800 Worktree 清理
+
+- Command:
+  - `scripts/agent_worktree_cleanup.sh 302 knowledge-graph-p0-entity-relation-query`
+- Exit code: `0`
+- Key output:
+  - `OK: cleaned worktree .worktrees/issue-302-knowledge-graph-p0-entity-relation-query and local branch task/302-knowledge-graph-p0-entity-relation-query`
+
+### 2026-02-08 21:57 +0800 Rulebook task 归档
+
+- Command:
+  - `rulebook task archive issue-302-knowledge-graph-p0-entity-relation-query`
+- Exit code: `0`
+- Key output:
+  - `Task issue-302-knowledge-graph-p0-entity-relation-query archived successfully`

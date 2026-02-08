@@ -76,5 +76,5 @@
 
 - [x] 6.1 在 RUN_LOG 记录 Scenario 映射、Red 失败输出、Green 通过输出
 - [x] 6.2 记录关键命令输出（单测/集测/基线测试）与阈值结果
-- [ ] 6.3 记录 Rulebook validate、门禁检查与 PR 证据
+- [x] 6.3 记录 Rulebook validate、门禁检查与 PR 证据
 - [x] 6.4 记录依赖同步检查（Dependency Sync Check）证据（无上游依赖/N-A 结论）
