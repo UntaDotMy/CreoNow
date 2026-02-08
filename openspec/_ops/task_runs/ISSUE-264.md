@@ -2,7 +2,7 @@
 
 - Issue: #264
 - Branch: task/264-ai-panel-model-mode-wiring
-- PR: https://github.com/Leeky1017/CreoNow/pull/264
+- PR: https://github.com/Leeky1017/CreoNow/pull/275
 
 ## Plan
 
@@ -58,3 +58,21 @@
 - Key output: passed.
 - Command: `pnpm.cmd typecheck`
 - Key output: `tsc --noEmit` passed.
+
+### 2026-02-08 16:24 +0800 rebase main and resolve execution order conflict
+
+- Command: `git fetch origin main && git merge --no-ff origin/main`
+- Key output: `CONFLICT (content): Merge conflict in openspec/changes/EXECUTION_ORDER.md`
+- Command: `edit openspec/changes/EXECUTION_ORDER.md`
+- Key output: 合并为 5 个活跃 changes 的串行执行顺序，并补充 AI wiring/catalog 依赖。
+- Command: `update openspec/_ops/task_runs/ISSUE-264.md`
+- Key output: 回填真实 PR 链接（#275）并记录冲突修复证据。
+
+### 2026-02-08 16:28 +0800 openspec preflight fix for completed active change
+
+- Command: `scripts/agent_pr_preflight.sh`
+- Key output: `PRE-FLIGHT FAILED ... completed and must be archived ... ai-model-catalog-discovery`
+- Command: `git mv openspec/changes/ai-model-catalog-discovery openspec/changes/archive/ai-model-catalog-discovery`
+- Key output: 已将已完成 change 归档到 `openspec/changes/archive/`。
+- Command: `edit openspec/changes/EXECUTION_ORDER.md`
+- Key output: 活跃 change 数量改为 4，并移除已归档 change 的活跃顺序项。

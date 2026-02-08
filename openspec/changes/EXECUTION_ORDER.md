@@ -1,29 +1,32 @@
 # Active Changes Execution Order
 
-更新时间：2026-02-08 13:02
+更新时间：2026-02-08 16:28
 
 适用范围：`openspec/changes/` 下所有非 `archive/`、非 `_template/` 的活跃 change。
 
 ## 执行策略
 
-- 当前活跃 change 数量为 3，存在并行变更，需显式顺序控制。
-- 执行模式：串行执行（先完成 IPC P2，再执行 AI Panel wiring，最后执行动态模型目录）。
+- 当前活跃 change 数量为 4。
+- 执行模式：串行（跨模块变更并行风险较高，统一串行减少规格顺序漂移与冲突回滚成本）。
 
 ## 执行顺序
 
-1. `ipc-p2-acceptance-slo-and-benchmark-gates`
-2. `ai-panel-model-mode-wiring`
-3. `ai-model-catalog-discovery`
+1. `windows-e2e-startup-readiness`
+2. `document-management-p1-file-tree-organization`
+3. `document-management-p1-reference-and-export`
+4. `ai-panel-model-mode-wiring`
 
 ## 依赖说明
 
-- `ipc-p1-ipc-testability-harness` 已完成并归档到 `openspec/changes/archive/`。
-- `ipc-p2-acceptance-slo-and-benchmark-gates` 继承 `ipc-p1` 产出的测试基建作为执行前提。
-- `ai-panel-model-mode-wiring` 依赖 IPC 契约 SSOT 与运行时校验链路（由已归档 `ipc-p0/p1` 变更提供）。
-- `ai-model-catalog-discovery` 依赖 `ai-panel-model-mode-wiring` 完成 mode/model 透传后再扩展动态模型来源。
+- `windows-e2e-startup-readiness` 依赖 `Issue #273` 的已合并基线（PR #274）并补齐收尾证据。
+- `document-management-p1-file-tree-organization` 依赖 `openspec/changes/archive/document-management-p0-crud-types-status/` 的 P0 基线输出。
+- `document-management-p1-reference-and-export` 依赖 `openspec/changes/archive/document-management-p0-crud-types-status/` 的 P0 基线输出。
+- 两个 `document-management-p1-*` changes 在规格层无硬依赖；当前按顺序 2 -> 3 串行推进，减少同模块冲突。
+- `ai-panel-model-mode-wiring` 依赖已归档 IPC P0/P1 的契约与校验基线，并为后续模型目录发现能力提供 mode/model 透传前提。
+- `ai-model-catalog-discovery` 已归档至 `openspec/changes/archive/ai-model-catalog-discovery/`，作为后续审计基线输入。
+- 历史 IPC changes 已归档在 `openspec/changes/archive/`，作为后续审计基线输入。
 
 ## 维护规则
 
 - 活跃 change 的范围、依赖、状态发生变化时，必须同步更新本文件。
 - 未同步更新本文件时，不得宣称执行顺序已确认。
-
