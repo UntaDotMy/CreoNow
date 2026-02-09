@@ -1,4 +1,4 @@
-import type { IpcMain } from "electron";
+import type { IpcMain, WebContents } from "electron";
 import type Database from "better-sqlite3";
 
 import type { IpcResponse } from "../../../../../packages/shared/types/ipc-generated";
@@ -11,6 +11,25 @@ import {
   type MemoryType,
   type UserMemoryItem,
 } from "../services/memory/memoryService";
+import {
+  createInMemoryMemoryTraceService,
+  type GenerationTrace,
+  type MemoryTraceService,
+} from "../services/memory/memoryTraceService";
+import {
+  createEpisodicMemoryService,
+  createSqliteEpisodeRepository,
+  type DistillGeneratedRule,
+  type DistillProgressEvent,
+  type DistillTrigger,
+  type EpisodicMemoryService,
+  type EpisodeQueryInput,
+  type EpisodeRecord,
+  type EpisodeRecordInput,
+  type SemanticMemoryRule,
+  type SemanticMemoryScope,
+  type SemanticMemoryRulePlaceholder,
+} from "../services/memory/episodicMemoryService";
 
 type MemoryCreatePayload = {
   type: MemoryType;
@@ -37,6 +56,67 @@ type MemoryUpdatePayload = {
 };
 
 type MemoryDeletePayload = { memoryId: string };
+type EpisodeRecordPayload = EpisodeRecordInput;
+type EpisodeQueryPayload = EpisodeQueryInput;
+type SemanticListPayload = { projectId: string };
+type SemanticAddPayload = {
+  projectId: string;
+  rule: string;
+  category: SemanticMemoryRule["category"];
+  confidence: number;
+  scope?: SemanticMemoryScope;
+  supportingEpisodes?: string[];
+  contradictingEpisodes?: string[];
+  userConfirmed?: boolean;
+  userModified?: boolean;
+};
+type SemanticUpdatePayload = {
+  projectId: string;
+  ruleId: string;
+  patch: Partial<
+    Pick<
+      SemanticMemoryRule,
+      | "rule"
+      | "category"
+      | "confidence"
+      | "scope"
+      | "supportingEpisodes"
+      | "contradictingEpisodes"
+      | "userConfirmed"
+      | "userModified"
+    >
+  >;
+};
+type SemanticDeletePayload = { projectId: string; ruleId: string };
+type SemanticPromotePayload = { projectId: string; ruleId: string };
+type ClearProjectPayload = { projectId: string; confirmed: boolean };
+type ClearAllPayload = { confirmed: boolean };
+type SemanticDistillPayload = { projectId: string; trigger?: DistillTrigger };
+type TraceGetPayload = { projectId: string; generationId: string };
+type TraceFeedbackPayload = {
+  projectId: string;
+  generationId: string;
+  verdict: "correct" | "incorrect";
+  reason?: string;
+};
+
+function tryGetSender(event: unknown): WebContents | null {
+  if (!event || typeof event !== "object") {
+    return null;
+  }
+  const maybeSender = (event as { sender?: unknown }).sender;
+  if (!maybeSender || typeof maybeSender !== "object") {
+    return null;
+  }
+  const typed = maybeSender as {
+    id?: unknown;
+    send?: (channel: string, payload: unknown) => void;
+  };
+  if (typeof typed.id !== "number" || typeof typed.send !== "function") {
+    return null;
+  }
+  return maybeSender as WebContents;
+}
 
 /**
  * Register `memory:*` IPC handlers.
@@ -45,7 +125,59 @@ export function registerMemoryIpcHandlers(deps: {
   ipcMain: IpcMain;
   db: Database.Database | null;
   logger: Logger;
+  episodicService?: EpisodicMemoryService;
+  distillLlm?: (args: {
+    projectId: string;
+    trigger: DistillTrigger;
+    snapshotEpisodes: EpisodeRecord[];
+    clusters: Array<{
+      sceneType: string;
+      skillUsed: string;
+      episodes: EpisodeRecord[];
+    }>;
+  }) => DistillGeneratedRule[];
+  distillScheduler?: (job: () => void) => void;
+  traceService?: MemoryTraceService;
 }): void {
+  const distillSubscribers = new Map<number, WebContents>();
+
+  function rememberSender(event: unknown): void {
+    const sender = tryGetSender(event);
+    if (!sender) {
+      return;
+    }
+    distillSubscribers.set(sender.id, sender);
+  }
+
+  function broadcastDistillProgress(event: DistillProgressEvent): void {
+    for (const [senderId, sender] of distillSubscribers) {
+      try {
+        sender.send("memory:distill:progress", event);
+      } catch (error) {
+        deps.logger.error("memory_distill_progress_send_failed", {
+          senderId,
+          message: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+  }
+
+  const episodicService =
+    deps.episodicService ??
+    (deps.db
+      ? createEpisodicMemoryService({
+          repository: createSqliteEpisodeRepository({
+            db: deps.db,
+            logger: deps.logger,
+          }),
+          logger: deps.logger,
+          distillLlm: deps.distillLlm,
+          distillScheduler: deps.distillScheduler,
+          onDistillProgress: broadcastDistillProgress,
+        })
+      : null);
+  const traceService = deps.traceService ?? createInMemoryMemoryTraceService();
+
   deps.ipcMain.handle(
     "memory:entry:create",
     async (
@@ -180,6 +312,277 @@ export function registerMemoryIpcHandlers(deps: {
       }
       const svc = createMemoryService({ db: deps.db, logger: deps.logger });
       const res = svc.previewInjection(payload);
+      return res.ok
+        ? { ok: true, data: res.data }
+        : { ok: false, error: res.error };
+    },
+  );
+
+  deps.ipcMain.handle(
+    "memory:episode:record",
+    async (
+      e,
+      payload: EpisodeRecordPayload,
+    ): Promise<
+      IpcResponse<{
+        accepted: true;
+        episodeId: string;
+        retryCount: number;
+        implicitSignal:
+          | "DIRECT_ACCEPT"
+          | "LIGHT_EDIT"
+          | "HEAVY_REWRITE"
+          | "FULL_REJECT"
+          | "UNDO_AFTER_ACCEPT"
+          | "REPEATED_SCENE_SKILL";
+        implicitWeight: number;
+      }>
+    > => {
+      if (!episodicService) {
+        return {
+          ok: false,
+          error: { code: "DB_ERROR", message: "Database not ready" },
+        };
+      }
+
+      rememberSender(e);
+      const res = episodicService.recordEpisode(payload);
+      return res.ok
+        ? { ok: true, data: res.data }
+        : { ok: false, error: res.error };
+    },
+  );
+
+  deps.ipcMain.handle(
+    "memory:episode:query",
+    async (
+      e,
+      payload: EpisodeQueryPayload,
+    ): Promise<
+      IpcResponse<{
+        items: EpisodeRecord[];
+        memoryDegraded: boolean;
+        fallbackRules: string[];
+        semanticRules: SemanticMemoryRulePlaceholder[];
+      }>
+    > => {
+      if (!episodicService) {
+        return {
+          ok: false,
+          error: { code: "DB_ERROR", message: "Database not ready" },
+        };
+      }
+
+      rememberSender(e);
+      const res = episodicService.queryEpisodes(payload);
+      return res.ok
+        ? { ok: true, data: res.data }
+        : { ok: false, error: res.error };
+    },
+  );
+
+  deps.ipcMain.handle(
+    "memory:semantic:list",
+    async (
+      e,
+      payload: SemanticListPayload,
+    ): Promise<
+      IpcResponse<{
+        items: SemanticMemoryRule[];
+        conflictQueue: Array<{ id: string; ruleIds: string[]; status: string }>;
+      }>
+    > => {
+      if (!episodicService) {
+        return {
+          ok: false,
+          error: { code: "DB_ERROR", message: "Database not ready" },
+        };
+      }
+      rememberSender(e);
+      const res = episodicService.listSemanticMemory(payload);
+      if (!res.ok) {
+        return { ok: false, error: res.error };
+      }
+      return {
+        ok: true,
+        data: {
+          items: res.data.items,
+          conflictQueue: res.data.conflictQueue.map((item) => ({
+            id: item.id,
+            ruleIds: [...item.ruleIds],
+            status: item.status,
+          })),
+        },
+      };
+    },
+  );
+
+  deps.ipcMain.handle(
+    "memory:semantic:add",
+    async (
+      e,
+      payload: SemanticAddPayload,
+    ): Promise<IpcResponse<{ item: SemanticMemoryRule }>> => {
+      if (!episodicService) {
+        return {
+          ok: false,
+          error: { code: "DB_ERROR", message: "Database not ready" },
+        };
+      }
+      rememberSender(e);
+      const res = episodicService.addSemanticMemory(payload);
+      return res.ok
+        ? { ok: true, data: res.data }
+        : { ok: false, error: res.error };
+    },
+  );
+
+  deps.ipcMain.handle(
+    "memory:semantic:update",
+    async (
+      e,
+      payload: SemanticUpdatePayload,
+    ): Promise<IpcResponse<{ item: SemanticMemoryRule }>> => {
+      if (!episodicService) {
+        return {
+          ok: false,
+          error: { code: "DB_ERROR", message: "Database not ready" },
+        };
+      }
+      rememberSender(e);
+      const res = episodicService.updateSemanticMemory(payload);
+      return res.ok
+        ? { ok: true, data: res.data }
+        : { ok: false, error: res.error };
+    },
+  );
+
+  deps.ipcMain.handle(
+    "memory:semantic:delete",
+    async (
+      e,
+      payload: SemanticDeletePayload,
+    ): Promise<IpcResponse<{ deleted: true }>> => {
+      if (!episodicService) {
+        return {
+          ok: false,
+          error: { code: "DB_ERROR", message: "Database not ready" },
+        };
+      }
+      rememberSender(e);
+      const res = episodicService.deleteSemanticMemory(payload);
+      return res.ok
+        ? { ok: true, data: res.data }
+        : { ok: false, error: res.error };
+    },
+  );
+
+  deps.ipcMain.handle(
+    "memory:scope:promote",
+    async (
+      e,
+      payload: SemanticPromotePayload,
+    ): Promise<IpcResponse<{ item: SemanticMemoryRule }>> => {
+      if (!episodicService) {
+        return {
+          ok: false,
+          error: { code: "DB_ERROR", message: "Database not ready" },
+        };
+      }
+      rememberSender(e);
+      const res = episodicService.promoteSemanticMemory(payload);
+      return res.ok
+        ? { ok: true, data: res.data }
+        : { ok: false, error: res.error };
+    },
+  );
+
+  deps.ipcMain.handle(
+    "memory:clear:project",
+    async (
+      e,
+      payload: ClearProjectPayload,
+    ): Promise<
+      IpcResponse<{ ok: true; deletedEpisodes: number; deletedRules: number }>
+    > => {
+      if (!episodicService) {
+        return {
+          ok: false,
+          error: { code: "DB_ERROR", message: "Database not ready" },
+        };
+      }
+      rememberSender(e);
+      const res = episodicService.clearProjectMemory(payload);
+      return res.ok
+        ? { ok: true, data: res.data }
+        : { ok: false, error: res.error };
+    },
+  );
+
+  deps.ipcMain.handle(
+    "memory:clear:all",
+    async (
+      e,
+      payload: ClearAllPayload,
+    ): Promise<
+      IpcResponse<{ ok: true; deletedEpisodes: number; deletedRules: number }>
+    > => {
+      if (!episodicService) {
+        return {
+          ok: false,
+          error: { code: "DB_ERROR", message: "Database not ready" },
+        };
+      }
+      rememberSender(e);
+      const res = episodicService.clearAllMemory(payload);
+      return res.ok
+        ? { ok: true, data: res.data }
+        : { ok: false, error: res.error };
+    },
+  );
+
+  deps.ipcMain.handle(
+    "memory:semantic:distill",
+    async (
+      e,
+      payload: SemanticDistillPayload,
+    ): Promise<IpcResponse<{ accepted: true; runId: string }>> => {
+      if (!episodicService) {
+        return {
+          ok: false,
+          error: { code: "DB_ERROR", message: "Database not ready" },
+        };
+      }
+      rememberSender(e);
+      const res = episodicService.distillSemanticMemory(payload);
+      return res.ok
+        ? { ok: true, data: res.data }
+        : { ok: false, error: res.error };
+    },
+  );
+
+  deps.ipcMain.handle(
+    "memory:trace:get",
+    async (
+      e,
+      payload: TraceGetPayload,
+    ): Promise<IpcResponse<{ trace: GenerationTrace }>> => {
+      rememberSender(e);
+      const res = traceService.getTrace(payload);
+      return res.ok
+        ? { ok: true, data: res.data }
+        : { ok: false, error: res.error };
+    },
+  );
+
+  deps.ipcMain.handle(
+    "memory:trace:feedback",
+    async (
+      e,
+      payload: TraceFeedbackPayload,
+    ): Promise<IpcResponse<{ accepted: true; feedbackId: string }>> => {
+      rememberSender(e);
+      const res = traceService.recordFeedback(payload);
       return res.ok
         ? { ok: true, data: res.data }
         : { ok: false, error: res.error };

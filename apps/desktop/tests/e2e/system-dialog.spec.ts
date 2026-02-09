@@ -147,7 +147,11 @@ test("system dialog: cancel/confirm across file tree + knowledge graph", async (
   // KnowledgeGraphPanel: Cancel keeps entity, Confirm deletes entity
   // ---------------------------------------------------------------------------
   await page.getByTestId("icon-bar-knowledge-graph").click();
-  await expect(page.getByTestId("layout-sidebar")).toBeVisible();
+  const sidebar = page.getByTestId("layout-sidebar");
+  await expect(sidebar).toBeVisible();
+  await expect(sidebar.getByRole("button", { name: "Graph" })).toBeVisible();
+  await sidebar.getByRole("button", { name: "List" }).click();
+  await expect(page.getByTestId("kg-entity-create")).toBeEnabled();
 
   await page.getByTestId("kg-entity-name").fill("Test Entity");
   await page.getByTestId("kg-entity-create").click();
@@ -170,17 +174,19 @@ test("system dialog: cancel/confirm across file tree + knowledge graph", async (
     if (!window.creonow) {
       throw new Error("Missing window.creonow bridge");
     }
-    const res = await window.creonow.invoke("kg:entity:list", {
+    const res = await window.creonow.invoke("knowledge:entity:list", {
       projectId: projectIdParam,
     });
     if (!res.ok) {
-      throw new Error(`Expected ok kg:entity:list, got: ${res.error.code}`);
+      throw new Error(
+        `Expected ok knowledge:entity:list, got: ${res.error.code}`,
+      );
     }
     const item = res.data.items.find((e) => e.name === "Test Entity") ?? null;
     if (!item) {
       throw new Error("Missing created entity in list");
     }
-    return item.entityId;
+    return item.id;
   }, projectId);
 
   await expect(page.getByTestId(`kg-entity-row-${entityId}`)).toBeVisible();

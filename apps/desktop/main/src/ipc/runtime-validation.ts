@@ -1,4 +1,5 @@
 import type { IpcMain } from "electron";
+import { randomUUID } from "node:crypto";
 
 import { ipcContract } from "./contract/ipc-contract";
 import type { IpcSchema } from "./contract/schema";
@@ -91,6 +92,8 @@ function renderSchema(schema: IpcSchema): string {
       return JSON.stringify(schema.value);
     case "array":
       return `array<${renderSchema(schema.element)}>`;
+    case "record":
+      return `record<string, ${renderSchema(schema.value)}>`;
     case "union":
       return schema.variants
         .map((variant) => renderSchema(variant))
@@ -160,6 +163,26 @@ function validateSchemaAtPath(
       value.forEach((item, index) => {
         validateSchemaAtPath(schema.element, item, `${path}[${index}]`, issues);
       });
+      return;
+    case "record":
+      if (!isRecord(value) || Array.isArray(value)) {
+        pushIssue(
+          issues,
+          path,
+          "must be object record",
+          renderSchema(schema),
+          value,
+        );
+        return;
+      }
+      for (const [key, recordValue] of Object.entries(value)) {
+        validateSchemaAtPath(
+          schema.value,
+          recordValue,
+          `${path}.${key}`,
+          issues,
+        );
+      }
       return;
     case "union": {
       const matchesVariant = schema.variants.some((variant) => {
@@ -246,8 +269,24 @@ function isIpcErrorCode(code: string): code is IpcErrorCode {
 }
 
 function toValidationError(
+  channel: string,
   issues: RuntimeValidationIssue[],
 ): IpcResponse<never> {
+  if (
+    channel.startsWith("project:project:") ||
+    channel.startsWith("project:lifecycle:")
+  ) {
+    return {
+      ok: false,
+      error: {
+        code: "PROJECT_IPC_SCHEMA_INVALID",
+        message: "项目请求参数不符合契约",
+        traceId: randomUUID(),
+        details: issues,
+      },
+    };
+  }
+
   return {
     ok: false,
     error: {
@@ -315,6 +354,9 @@ function sanitizeErrorEnvelope(rawError: IpcError): IpcError {
   if ("retryable" in rawError) {
     sanitized.retryable = rawError.retryable;
   }
+  if ("traceId" in rawError) {
+    sanitized.traceId = rawError.traceId;
+  }
   return sanitized;
 }
 
@@ -366,7 +408,7 @@ export function wrapIpcRequestResponse(
         channel: args.channel,
         issueCount: requestIssues.length,
       });
-      return toValidationError(requestIssues);
+      return toValidationError(args.channel, requestIssues);
     }
 
     try {

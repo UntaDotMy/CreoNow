@@ -15,6 +15,13 @@ export const IPC_ERROR_CODES = [
   "UNSUPPORTED",
   "IO_ERROR",
   "DB_ERROR",
+  "MEMORY_EPISODE_WRITE_FAILED",
+  "MEMORY_CAPACITY_EXCEEDED",
+  "MEMORY_DISTILL_LLM_UNAVAILABLE",
+  "MEMORY_CONFIDENCE_OUT_OF_RANGE",
+  "MEMORY_CLEAR_CONFIRM_REQUIRED",
+  "MEMORY_TRACE_MISMATCH",
+  "MEMORY_SCOPE_DENIED",
   "MODEL_NOT_READY",
   "ENCODING_FAILED",
   "RATE_LIMITED",
@@ -22,6 +29,30 @@ export const IPC_ERROR_CODES = [
   "CANCELED",
   "UPSTREAM_ERROR",
   "INTERNAL",
+  "PROJECT_CAPACITY_EXCEEDED",
+  "PROJECT_DELETE_REQUIRES_ARCHIVE",
+  "PROJECT_METADATA_INVALID_ENUM",
+  "PROJECT_PURGE_PERMISSION_DENIED",
+  "PROJECT_LIFECYCLE_WRITE_FAILED",
+  "PROJECT_IPC_SCHEMA_INVALID",
+  "KG_ATTRIBUTE_KEYS_EXCEEDED",
+  "KG_CAPACITY_EXCEEDED",
+  "KG_ENTITY_CONFLICT",
+  "KG_ENTITY_DUPLICATE",
+  "KG_QUERY_TIMEOUT",
+  "KG_RECOGNITION_UNAVAILABLE",
+  "KG_RELEVANT_QUERY_FAILED",
+  "KG_RELATION_INVALID",
+  "KG_SCOPE_VIOLATION",
+  "KG_SUBGRAPH_K_EXCEEDED",
+  "PROJECT_SWITCH_TIMEOUT",
+  "DOCUMENT_SAVE_CONFLICT",
+  "MEMORY_BACKPRESSURE",
+  "SKILL_TIMEOUT",
+  "AI_PROVIDER_UNAVAILABLE",
+  "VERSION_MERGE_TIMEOUT",
+  "SEARCH_TIMEOUT",
+  "CONTEXT_SCOPE_VIOLATION",
 ] as const;
 
 export type IpcErrorCode = (typeof IPC_ERROR_CODES)[number];
@@ -117,6 +148,25 @@ const STATS_DAY_SCHEMA = s.object({
   summary: STATS_SUMMARY_SCHEMA,
 });
 
+const PROJECT_TYPE_SCHEMA = s.union(
+  s.literal("novel"),
+  s.literal("screenplay"),
+  s.literal("media"),
+);
+
+const PROJECT_STAGE_SCHEMA = s.union(
+  s.literal("outline"),
+  s.literal("draft"),
+  s.literal("revision"),
+  s.literal("final"),
+);
+
+const PROJECT_LIFECYCLE_STATE_SCHEMA = s.union(
+  s.literal("active"),
+  s.literal("archived"),
+  s.literal("deleted"),
+);
+
 const EXPORT_RESULT_SCHEMA = s.object({
   relativePath: s.string(),
   bytesWritten: s.number(),
@@ -211,27 +261,198 @@ const MEMORY_INJECTION_ITEM_SCHEMA = s.object({
   reason: MEMORY_INJECTION_REASON_SCHEMA,
 });
 
-const KG_ENTITY_SCHEMA = s.object({
-  entityId: s.string(),
+const MEMORY_IMPLICIT_SIGNAL_SCHEMA = s.union(
+  s.literal("DIRECT_ACCEPT"),
+  s.literal("LIGHT_EDIT"),
+  s.literal("HEAVY_REWRITE"),
+  s.literal("FULL_REJECT"),
+  s.literal("UNDO_AFTER_ACCEPT"),
+  s.literal("REPEATED_SCENE_SKILL"),
+);
+
+const MEMORY_EPISODE_SCHEMA = s.object({
+  id: s.string(),
   projectId: s.string(),
-  name: s.string(),
-  entityType: s.optional(s.string()),
-  description: s.optional(s.string()),
-  metadataJson: s.string(),
+  scope: s.literal("project"),
+  version: s.literal(1),
+  chapterId: s.string(),
+  sceneType: s.string(),
+  skillUsed: s.string(),
+  inputContext: s.string(),
+  candidates: s.array(s.string()),
+  selectedIndex: s.number(),
+  finalText: s.string(),
+  explicit: s.optional(s.string()),
+  editDistance: s.number(),
+  implicitSignal: MEMORY_IMPLICIT_SIGNAL_SCHEMA,
+  implicitWeight: s.number(),
+  importance: s.number(),
+  recallCount: s.number(),
+  lastRecalledAt: s.optional(s.number()),
+  compressed: s.boolean(),
+  userConfirmed: s.boolean(),
   createdAt: s.number(),
   updatedAt: s.number(),
 });
 
-const KG_RELATION_SCHEMA = s.object({
-  relationId: s.string(),
+const MEMORY_SEMANTIC_RULE_PLACEHOLDER_SCHEMA = s.object({
+  id: s.string(),
   projectId: s.string(),
-  fromEntityId: s.string(),
-  toEntityId: s.string(),
-  relationType: s.string(),
-  metadataJson: s.string(),
-  evidenceJson: s.string(),
+  scope: s.union(s.literal("project"), s.literal("global")),
+  version: s.literal(1),
+  rule: s.string(),
+  confidence: s.number(),
   createdAt: s.number(),
   updatedAt: s.number(),
+});
+
+const MEMORY_SEMANTIC_CATEGORY_SCHEMA = s.union(
+  s.literal("style"),
+  s.literal("structure"),
+  s.literal("character"),
+  s.literal("pacing"),
+  s.literal("vocabulary"),
+);
+
+const MEMORY_SEMANTIC_SCOPE_SCHEMA = s.union(
+  s.literal("global"),
+  s.literal("project"),
+);
+
+const MEMORY_SEMANTIC_RULE_SCHEMA = s.object({
+  id: s.string(),
+  projectId: s.string(),
+  scope: MEMORY_SEMANTIC_SCOPE_SCHEMA,
+  version: s.literal(1),
+  rule: s.string(),
+  category: MEMORY_SEMANTIC_CATEGORY_SCHEMA,
+  confidence: s.number(),
+  supportingEpisodes: s.array(s.string()),
+  contradictingEpisodes: s.array(s.string()),
+  userConfirmed: s.boolean(),
+  userModified: s.boolean(),
+  recentlyUpdated: s.optional(s.boolean()),
+  conflictMarked: s.optional(s.boolean()),
+  createdAt: s.number(),
+  updatedAt: s.number(),
+});
+
+const MEMORY_CONFLICT_QUEUE_ITEM_SCHEMA = s.object({
+  id: s.string(),
+  ruleIds: s.array(s.string()),
+  status: s.union(s.literal("pending"), s.literal("resolved")),
+});
+
+const MEMORY_DISTILL_TRIGGER_SCHEMA = s.union(
+  s.literal("batch"),
+  s.literal("idle"),
+  s.literal("manual"),
+  s.literal("conflict"),
+);
+
+const MEMORY_DISTILL_PROGRESS_SCHEMA = s.object({
+  runId: s.string(),
+  projectId: s.string(),
+  trigger: MEMORY_DISTILL_TRIGGER_SCHEMA,
+  stage: s.union(
+    s.literal("started"),
+    s.literal("clustered"),
+    s.literal("patterned"),
+    s.literal("generated"),
+    s.literal("completed"),
+    s.literal("failed"),
+  ),
+  progress: s.number(),
+  message: s.optional(s.string()),
+  errorCode: s.optional(IPC_ERROR_CODE_SCHEMA),
+});
+
+const MEMORY_TRACE_TYPE_SCHEMA = s.union(
+  s.literal("working"),
+  s.literal("episodic"),
+  s.literal("semantic"),
+);
+
+const MEMORY_GENERATION_TRACE_SCHEMA = s.object({
+  generationId: s.string(),
+  projectId: s.string(),
+  memoryReferences: s.object({
+    working: s.array(s.string()),
+    episodic: s.array(s.string()),
+    semantic: s.array(s.string()),
+  }),
+  influenceWeights: s.array(
+    s.object({
+      memoryType: MEMORY_TRACE_TYPE_SCHEMA,
+      referenceId: s.string(),
+      weight: s.number(),
+    }),
+  ),
+  createdAt: s.number(),
+  updatedAt: s.number(),
+});
+
+const MEMORY_TRACE_FEEDBACK_VERDICT_SCHEMA = s.union(
+  s.literal("correct"),
+  s.literal("incorrect"),
+);
+
+const KG_ENTITY_TYPE_SCHEMA = s.union(
+  s.literal("character"),
+  s.literal("location"),
+  s.literal("event"),
+  s.literal("item"),
+  s.literal("faction"),
+);
+const KG_ENTITY_SCHEMA = s.object({
+  id: s.string(),
+  projectId: s.string(),
+  type: KG_ENTITY_TYPE_SCHEMA,
+  name: s.string(),
+  description: s.string(),
+  attributes: s.record(s.string()),
+  version: s.number(),
+  createdAt: s.string(),
+  updatedAt: s.string(),
+});
+
+const KG_RELATION_SCHEMA = s.object({
+  id: s.string(),
+  projectId: s.string(),
+  sourceEntityId: s.string(),
+  targetEntityId: s.string(),
+  relationType: s.string(),
+  description: s.string(),
+  createdAt: s.string(),
+});
+
+const KG_RECOGNITION_ENQUEUE_SCHEMA = s.object({
+  taskId: s.string(),
+  status: s.union(s.literal("started"), s.literal("queued")),
+  queuePosition: s.number(),
+});
+
+const KG_RECOGNITION_STATS_SCHEMA = s.object({
+  running: s.number(),
+  queued: s.number(),
+  maxConcurrency: s.number(),
+  peakRunning: s.number(),
+  completed: s.number(),
+  completionOrder: s.array(s.string()),
+  canceledTaskIds: s.array(s.string()),
+});
+
+const KG_RULES_INJECTION_ENTITY_SCHEMA = s.object({
+  id: s.string(),
+  name: s.string(),
+  type: KG_ENTITY_TYPE_SCHEMA,
+  attributes: s.record(s.string()),
+  relationsSummary: s.array(s.string()),
+});
+
+const KG_RULES_INJECTION_SCHEMA = s.object({
+  injectedEntities: s.array(KG_RULES_INJECTION_ENTITY_SCHEMA),
+  source: s.literal("kg-rules-mock"),
 });
 
 const DOCUMENT_TYPE_SCHEMA = s.union(
@@ -305,6 +526,24 @@ export const ipcContract = {
         documentId: s.optional(s.string()),
       }),
       response: EXPORT_RESULT_SCHEMA,
+    },
+    "export:project:bundle": {
+      request: s.object({
+        projectId: s.string(),
+      }),
+      response: EXPORT_RESULT_SCHEMA,
+    },
+    "ai:chat:send": {
+      request: s.object({
+        message: s.string(),
+        projectId: s.optional(s.string()),
+        documentId: s.optional(s.string()),
+      }),
+      response: s.object({
+        accepted: s.literal(true),
+        messageId: s.string(),
+        echoed: s.string(),
+      }),
     },
     "ai:skill:run": {
       request: s.object({
@@ -497,6 +736,165 @@ export const ipcContract = {
         ),
       }),
     },
+    "memory:episode:record": {
+      request: s.object({
+        projectId: s.string(),
+        chapterId: s.string(),
+        sceneType: s.string(),
+        skillUsed: s.string(),
+        inputContext: s.string(),
+        candidates: s.array(s.string()),
+        selectedIndex: s.number(),
+        finalText: s.string(),
+        explicit: s.optional(s.string()),
+        editDistance: s.number(),
+        importance: s.optional(s.number()),
+        acceptedWithoutEdit: s.optional(s.boolean()),
+        undoAfterAccept: s.optional(s.boolean()),
+        repeatedSceneSkillCount: s.optional(s.number()),
+        userConfirmed: s.optional(s.boolean()),
+        targetEpisodeId: s.optional(s.string()),
+      }),
+      response: s.object({
+        accepted: s.literal(true),
+        episodeId: s.string(),
+        retryCount: s.number(),
+        implicitSignal: MEMORY_IMPLICIT_SIGNAL_SCHEMA,
+        implicitWeight: s.number(),
+      }),
+    },
+    "memory:episode:query": {
+      request: s.object({
+        projectId: s.string(),
+        sceneType: s.string(),
+        queryText: s.optional(s.string()),
+        limit: s.optional(s.number()),
+      }),
+      response: s.object({
+        items: s.array(MEMORY_EPISODE_SCHEMA),
+        memoryDegraded: s.boolean(),
+        fallbackRules: s.array(s.string()),
+        semanticRules: s.array(MEMORY_SEMANTIC_RULE_PLACEHOLDER_SCHEMA),
+      }),
+    },
+    "memory:semantic:list": {
+      request: s.object({
+        projectId: s.string(),
+      }),
+      response: s.object({
+        items: s.array(MEMORY_SEMANTIC_RULE_SCHEMA),
+        conflictQueue: s.array(MEMORY_CONFLICT_QUEUE_ITEM_SCHEMA),
+      }),
+    },
+    "memory:semantic:add": {
+      request: s.object({
+        projectId: s.string(),
+        rule: s.string(),
+        category: MEMORY_SEMANTIC_CATEGORY_SCHEMA,
+        confidence: s.number(),
+        scope: s.optional(MEMORY_SEMANTIC_SCOPE_SCHEMA),
+        supportingEpisodes: s.optional(s.array(s.string())),
+        contradictingEpisodes: s.optional(s.array(s.string())),
+        userConfirmed: s.optional(s.boolean()),
+        userModified: s.optional(s.boolean()),
+      }),
+      response: s.object({
+        item: MEMORY_SEMANTIC_RULE_SCHEMA,
+      }),
+    },
+    "memory:semantic:update": {
+      request: s.object({
+        projectId: s.string(),
+        ruleId: s.string(),
+        patch: s.object({
+          rule: s.optional(s.string()),
+          category: s.optional(MEMORY_SEMANTIC_CATEGORY_SCHEMA),
+          confidence: s.optional(s.number()),
+          scope: s.optional(MEMORY_SEMANTIC_SCOPE_SCHEMA),
+          supportingEpisodes: s.optional(s.array(s.string())),
+          contradictingEpisodes: s.optional(s.array(s.string())),
+          userConfirmed: s.optional(s.boolean()),
+          userModified: s.optional(s.boolean()),
+        }),
+      }),
+      response: s.object({
+        item: MEMORY_SEMANTIC_RULE_SCHEMA,
+      }),
+    },
+    "memory:semantic:delete": {
+      request: s.object({
+        projectId: s.string(),
+        ruleId: s.string(),
+      }),
+      response: s.object({
+        deleted: s.literal(true),
+      }),
+    },
+    "memory:scope:promote": {
+      request: s.object({
+        projectId: s.string(),
+        ruleId: s.string(),
+      }),
+      response: s.object({
+        item: MEMORY_SEMANTIC_RULE_SCHEMA,
+      }),
+    },
+    "memory:clear:project": {
+      request: s.object({
+        projectId: s.string(),
+        confirmed: s.boolean(),
+      }),
+      response: s.object({
+        ok: s.literal(true),
+        deletedEpisodes: s.number(),
+        deletedRules: s.number(),
+      }),
+    },
+    "memory:clear:all": {
+      request: s.object({
+        confirmed: s.boolean(),
+      }),
+      response: s.object({
+        ok: s.literal(true),
+        deletedEpisodes: s.number(),
+        deletedRules: s.number(),
+      }),
+    },
+    "memory:semantic:distill": {
+      request: s.object({
+        projectId: s.string(),
+        trigger: s.optional(MEMORY_DISTILL_TRIGGER_SCHEMA),
+      }),
+      response: s.object({
+        accepted: s.literal(true),
+        runId: s.string(),
+      }),
+    },
+    "memory:distill:progress": {
+      request: MEMORY_DISTILL_PROGRESS_SCHEMA,
+      response: MEMORY_DISTILL_PROGRESS_SCHEMA,
+    },
+    "memory:trace:get": {
+      request: s.object({
+        projectId: s.string(),
+        generationId: s.string(),
+      }),
+      response: s.object({
+        trace: MEMORY_GENERATION_TRACE_SCHEMA,
+      }),
+    },
+    "memory:trace:feedback": {
+      request: s.object({
+        projectId: s.string(),
+        generationId: s.string(),
+        verdict: MEMORY_TRACE_FEEDBACK_VERDICT_SCHEMA,
+        reason: s.optional(s.string()),
+      }),
+      response: s.object({
+        accepted: s.literal(true),
+        feedbackId: s.string(),
+      }),
+    },
     "search:fulltext:query": {
       request: s.object({
         projectId: s.string(),
@@ -542,77 +940,198 @@ export const ipcContract = {
         diagnostics: RAG_RETRIEVE_DIAGNOSTICS_SCHEMA,
       }),
     },
-    "kg:graph:get": {
+    "knowledge:entity:create": {
       request: s.object({
         projectId: s.string(),
-        purpose: s.optional(s.union(s.literal("ui"), s.literal("context"))),
+        type: KG_ENTITY_TYPE_SCHEMA,
+        name: s.string(),
+        description: s.optional(s.string()),
+        attributes: s.optional(s.record(s.string())),
+      }),
+      response: KG_ENTITY_SCHEMA,
+    },
+    "knowledge:entity:read": {
+      request: s.object({
+        projectId: s.string(),
+        id: s.string(),
+      }),
+      response: KG_ENTITY_SCHEMA,
+    },
+    "knowledge:entity:list": {
+      request: s.object({ projectId: s.string() }),
+      response: s.object({ items: s.array(KG_ENTITY_SCHEMA) }),
+    },
+    "knowledge:entity:update": {
+      request: s.object({
+        projectId: s.string(),
+        id: s.string(),
+        expectedVersion: s.number(),
+        patch: s.object({
+          type: s.optional(KG_ENTITY_TYPE_SCHEMA),
+          name: s.optional(s.string()),
+          description: s.optional(s.string()),
+          attributes: s.optional(s.record(s.string())),
+        }),
+      }),
+      response: KG_ENTITY_SCHEMA,
+    },
+    "knowledge:entity:delete": {
+      request: s.object({
+        projectId: s.string(),
+        id: s.string(),
+      }),
+      response: s.object({
+        deleted: s.literal(true),
+        deletedRelationCount: s.number(),
+      }),
+    },
+    "knowledge:relation:create": {
+      request: s.object({
+        projectId: s.string(),
+        sourceEntityId: s.string(),
+        targetEntityId: s.string(),
+        relationType: s.string(),
+        description: s.optional(s.string()),
+      }),
+      response: KG_RELATION_SCHEMA,
+    },
+    "knowledge:relation:list": {
+      request: s.object({ projectId: s.string() }),
+      response: s.object({ items: s.array(KG_RELATION_SCHEMA) }),
+    },
+    "knowledge:relation:update": {
+      request: s.object({
+        projectId: s.string(),
+        id: s.string(),
+        patch: s.object({
+          sourceEntityId: s.optional(s.string()),
+          targetEntityId: s.optional(s.string()),
+          relationType: s.optional(s.string()),
+          description: s.optional(s.string()),
+        }),
+      }),
+      response: KG_RELATION_SCHEMA,
+    },
+    "knowledge:relation:delete": {
+      request: s.object({
+        projectId: s.string(),
+        id: s.string(),
+      }),
+      response: s.object({ deleted: s.literal(true) }),
+    },
+    "knowledge:query:subgraph": {
+      request: s.object({
+        projectId: s.string(),
+        centerEntityId: s.string(),
+        k: s.number(),
       }),
       response: s.object({
         entities: s.array(KG_ENTITY_SCHEMA),
         relations: s.array(KG_RELATION_SCHEMA),
+        nodeCount: s.number(),
+        edgeCount: s.number(),
+        queryCostMs: s.number(),
       }),
     },
-    "kg:entity:create": {
+    "knowledge:query:path": {
       request: s.object({
         projectId: s.string(),
-        name: s.string(),
-        entityType: s.optional(s.string()),
-        description: s.optional(s.string()),
-        metadataJson: s.optional(s.string()),
+        sourceEntityId: s.string(),
+        targetEntityId: s.string(),
+        timeoutMs: s.optional(s.number()),
+      }),
+      response: s.object({
+        pathEntityIds: s.array(s.string()),
+        queryCostMs: s.number(),
+        expansions: s.number(),
+        degraded: s.boolean(),
+      }),
+    },
+    "knowledge:query:validate": {
+      request: s.object({
+        projectId: s.string(),
+      }),
+      response: s.object({
+        cycles: s.array(s.array(s.string())),
+        queryCostMs: s.number(),
+      }),
+    },
+    "knowledge:recognition:enqueue": {
+      request: s.object({
+        projectId: s.string(),
+        documentId: s.string(),
+        sessionId: s.string(),
+        contentText: s.string(),
+        traceId: s.string(),
+      }),
+      response: KG_RECOGNITION_ENQUEUE_SCHEMA,
+    },
+    "knowledge:recognition:cancel": {
+      request: s.object({
+        projectId: s.string(),
+        sessionId: s.string(),
+        taskId: s.string(),
+      }),
+      response: s.object({
+        canceled: s.literal(true),
+      }),
+    },
+    "knowledge:recognition:stats": {
+      request: s.object({
+        projectId: s.string(),
+        sessionId: s.string(),
+      }),
+      response: KG_RECOGNITION_STATS_SCHEMA,
+    },
+    "knowledge:suggestion:accept": {
+      request: s.object({
+        projectId: s.string(),
+        sessionId: s.string(),
+        suggestionId: s.string(),
       }),
       response: KG_ENTITY_SCHEMA,
     },
-    "kg:entity:list": {
-      request: s.object({ projectId: s.string() }),
-      response: s.object({ items: s.array(KG_ENTITY_SCHEMA) }),
-    },
-    "kg:entity:update": {
-      request: s.object({
-        entityId: s.string(),
-        patch: s.object({
-          name: s.optional(s.string()),
-          entityType: s.optional(s.string()),
-          description: s.optional(s.string()),
-          metadataJson: s.optional(s.string()),
-        }),
-      }),
-      response: KG_ENTITY_SCHEMA,
-    },
-    "kg:entity:delete": {
-      request: s.object({ entityId: s.string() }),
-      response: s.object({ deleted: s.literal(true) }),
-    },
-    "kg:relation:create": {
+    "knowledge:suggestion:dismiss": {
       request: s.object({
         projectId: s.string(),
-        fromEntityId: s.string(),
-        toEntityId: s.string(),
-        relationType: s.string(),
-        metadataJson: s.optional(s.string()),
-        evidenceJson: s.optional(s.string()),
+        sessionId: s.string(),
+        suggestionId: s.string(),
       }),
-      response: KG_RELATION_SCHEMA,
+      response: s.object({
+        dismissed: s.literal(true),
+      }),
     },
-    "kg:relation:list": {
-      request: s.object({ projectId: s.string() }),
-      response: s.object({ items: s.array(KG_RELATION_SCHEMA) }),
-    },
-    "kg:relation:update": {
+    "knowledge:query:relevant": {
       request: s.object({
-        relationId: s.string(),
-        patch: s.object({
-          fromEntityId: s.optional(s.string()),
-          toEntityId: s.optional(s.string()),
-          relationType: s.optional(s.string()),
-          metadataJson: s.optional(s.string()),
-          evidenceJson: s.optional(s.string()),
-        }),
+        projectId: s.string(),
+        excerpt: s.string(),
+        maxEntities: s.optional(s.number()),
+        entityIds: s.optional(s.array(s.string())),
       }),
-      response: KG_RELATION_SCHEMA,
+      response: s.object({
+        items: s.array(KG_ENTITY_SCHEMA),
+        queryCostMs: s.number(),
+      }),
     },
-    "kg:relation:delete": {
-      request: s.object({ relationId: s.string() }),
-      response: s.object({ deleted: s.literal(true) }),
+    "knowledge:query:byids": {
+      request: s.object({
+        projectId: s.string(),
+        entityIds: s.array(s.string()),
+      }),
+      response: s.object({
+        items: s.array(KG_ENTITY_SCHEMA),
+      }),
+    },
+    "knowledge:rules:inject": {
+      request: s.object({
+        projectId: s.string(),
+        documentId: s.string(),
+        excerpt: s.string(),
+        traceId: s.string(),
+        maxEntities: s.optional(s.number()),
+        entityIds: s.optional(s.array(s.string())),
+      }),
+      response: KG_RULES_INJECTION_SCHEMA,
     },
     "skill:registry:list": {
       request: s.object({ includeDisabled: s.optional(s.boolean()) }),
@@ -639,8 +1158,22 @@ export const ipcContract = {
       response: s.object({ tableNames: s.array(s.string()) }),
     },
     "project:project:create": {
-      request: s.object({ name: s.optional(s.string()) }),
+      request: s.object({
+        name: s.optional(s.string()),
+        type: s.optional(PROJECT_TYPE_SCHEMA),
+        description: s.optional(s.string()),
+      }),
       response: s.object({ projectId: s.string(), rootPath: s.string() }),
+    },
+    "project:project:createaiassist": {
+      request: s.object({ prompt: s.string() }),
+      response: s.object({
+        name: s.string(),
+        type: PROJECT_TYPE_SCHEMA,
+        description: s.string(),
+        chapterOutlines: s.array(s.string()),
+        characters: s.array(s.string()),
+      }),
     },
     "project:project:list": {
       request: s.object({ includeArchived: s.optional(s.boolean()) }),
@@ -650,10 +1183,38 @@ export const ipcContract = {
             projectId: s.string(),
             name: s.string(),
             rootPath: s.string(),
+            type: s.optional(PROJECT_TYPE_SCHEMA),
+            stage: s.optional(PROJECT_STAGE_SCHEMA),
             updatedAt: s.number(),
             archivedAt: s.optional(s.number()),
           }),
         ),
+      }),
+    },
+    "project:project:update": {
+      request: s.object({
+        projectId: s.string(),
+        patch: s.object({
+          type: s.optional(s.string()),
+          description: s.optional(s.string()),
+          stage: s.optional(s.string()),
+          targetWordCount: s.optional(s.number()),
+          targetChapterCount: s.optional(s.number()),
+          narrativePerson: s.optional(s.string()),
+          languageStyle: s.optional(s.string()),
+          targetAudience: s.optional(s.string()),
+          defaultSkillSetId: s.optional(s.string()),
+          knowledgeGraphId: s.optional(s.string()),
+        }),
+      }),
+      response: s.object({ updated: s.literal(true) }),
+    },
+    "project:project:stats": {
+      request: s.object({}),
+      response: s.object({
+        total: s.number(),
+        active: s.number(),
+        archived: s.number(),
       }),
     },
     "project:project:rename": {
@@ -688,9 +1249,62 @@ export const ipcContract = {
       request: s.object({ projectId: s.string() }),
       response: s.object({ projectId: s.string(), rootPath: s.string() }),
     },
+    "project:project:switch": {
+      request: s.object({
+        projectId: s.string(),
+        operatorId: s.string(),
+        fromProjectId: s.string(),
+        traceId: s.string(),
+      }),
+      response: s.object({
+        currentProjectId: s.string(),
+        switchedAt: s.string(),
+      }),
+    },
     "project:project:delete": {
       request: s.object({ projectId: s.string() }),
       response: s.object({ deleted: s.literal(true) }),
+    },
+    "project:lifecycle:archive": {
+      request: s.object({
+        projectId: s.string(),
+        traceId: s.optional(s.string()),
+      }),
+      response: s.object({
+        projectId: s.string(),
+        state: PROJECT_LIFECYCLE_STATE_SCHEMA,
+        archivedAt: s.optional(s.number()),
+      }),
+    },
+    "project:lifecycle:restore": {
+      request: s.object({
+        projectId: s.string(),
+        traceId: s.optional(s.string()),
+      }),
+      response: s.object({
+        projectId: s.string(),
+        state: PROJECT_LIFECYCLE_STATE_SCHEMA,
+      }),
+    },
+    "project:lifecycle:purge": {
+      request: s.object({
+        projectId: s.string(),
+        traceId: s.optional(s.string()),
+      }),
+      response: s.object({
+        projectId: s.string(),
+        state: PROJECT_LIFECYCLE_STATE_SCHEMA,
+      }),
+    },
+    "project:lifecycle:get": {
+      request: s.object({
+        projectId: s.string(),
+        traceId: s.optional(s.string()),
+      }),
+      response: s.object({
+        projectId: s.string(),
+        state: PROJECT_LIFECYCLE_STATE_SCHEMA,
+      }),
     },
     "context:creonow:ensure": {
       request: s.object({ projectId: s.string() }),

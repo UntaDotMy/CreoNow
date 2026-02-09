@@ -13,6 +13,7 @@ import {
 } from "../../components/primitives";
 import { useConfirmDialog } from "../../hooks/useConfirmDialog";
 import { CreateProjectDialog } from "../projects/CreateProjectDialog";
+import { DeleteProjectDialog } from "../projects/DeleteProjectDialog";
 import { RenameProjectDialog } from "./RenameProjectDialog";
 import {
   useProjectStore,
@@ -93,7 +94,7 @@ function HeroCard(props: {
         </p>
         <div className="flex gap-3">
           <span className="text-[11px] uppercase tracking-[0.05em] text-[var(--color-fg-faint)] border border-[var(--color-border-default)] px-2.5 py-1 rounded-full">
-            Project
+            {formatStageTag(project.stage)}
           </span>
         </div>
       </div>
@@ -246,7 +247,7 @@ function ProjectCard(props: {
 
       <div className="mt-auto pt-4 border-t border-[var(--color-border-default)] flex justify-between items-center">
         <span className="text-[11px] uppercase tracking-[0.05em] text-[var(--color-fg-faint)]">
-          Project
+          {formatStageTag(project.stage)}
         </span>
       </div>
     </div>
@@ -330,6 +331,23 @@ function formatDate(timestamp: number): string {
   return `${month} ${day}`;
 }
 
+function formatStageTag(
+  stage: "outline" | "draft" | "revision" | "final" | undefined,
+): string {
+  switch (stage) {
+    case "outline":
+      return "大纲";
+    case "draft":
+      return "初稿";
+    case "revision":
+      return "修改";
+    case "final":
+      return "定稿";
+    default:
+      return "项目";
+  }
+}
+
 // =============================================================================
 // Main Component
 // =============================================================================
@@ -364,6 +382,10 @@ export function DashboardPage(props: DashboardPageProps): JSX.Element {
     null,
   );
   const [archivedExpanded, setArchivedExpanded] = React.useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = React.useState(false);
+  const [deleteSubmitting, setDeleteSubmitting] = React.useState(false);
+  const [deleteTargetProject, setDeleteTargetProject] =
+    React.useState<ProjectListItem | null>(null);
 
   // Bootstrap projects on mount
   React.useEffect(() => {
@@ -501,25 +523,27 @@ export function DashboardPage(props: DashboardPageProps): JSX.Element {
    */
   const handleDelete = React.useCallback(
     async (projectId: string) => {
-      const project = items.find((p) => p.projectId === projectId) ?? null;
-      const projectName = project?.name?.trim().length
-        ? project.name
-        : "Untitled Project";
-
-      const confirmed = await confirm({
-        title: "Delete Project?",
-        description: `This action cannot be undone. "${projectName}" will be permanently deleted.`,
-        primaryLabel: "Delete",
-        secondaryLabel: "Cancel",
-      });
-      if (!confirmed) {
+      const project = items.find((candidate) => candidate.projectId === projectId);
+      if (!project) {
         return;
       }
-
-      await deleteProject(projectId);
+      setDeleteTargetProject(project);
+      setDeleteDialogOpen(true);
     },
-    [confirm, deleteProject, items],
+    [items],
   );
+
+  const handleDeleteConfirm = React.useCallback(async () => {
+    if (!deleteTargetProject) {
+      return;
+    }
+
+    setDeleteSubmitting(true);
+    await deleteProject(deleteTargetProject.projectId);
+    setDeleteSubmitting(false);
+    setDeleteDialogOpen(false);
+    setDeleteTargetProject(null);
+  }, [deleteProject, deleteTargetProject]);
 
   // Loading state
   if (bootstrapStatus === "loading") {
@@ -578,10 +602,10 @@ export function DashboardPage(props: DashboardPageProps): JSX.Element {
             color="default"
             className="text-lg font-medium mb-2"
           >
-            No projects yet
+            开始创建你的第一个创作项目
           </Text>
           <Text size="small" color="muted" className="mb-8 text-center">
-            Create your first project to start writing.
+            从一个新项目开始你的创作流程。
           </Text>
           <Button
             data-testid="dashboard-create-first"
@@ -589,7 +613,7 @@ export function DashboardPage(props: DashboardPageProps): JSX.Element {
             size="md"
             onClick={() => setCreateDialogOpen(true)}
           >
-            Create Project
+            新建项目
           </Button>
         </div>
 
@@ -732,7 +756,7 @@ export function DashboardPage(props: DashboardPageProps): JSX.Element {
               {searchQuery && filteredProjects.length === 0 && (
                 <div className="text-center py-12">
                   <Text size="body" color="muted">
-                    No projects match &quot;{searchQuery}&quot;
+                    未找到匹配结果
                   </Text>
                 </div>
               )}
@@ -807,6 +831,19 @@ export function DashboardPage(props: DashboardPageProps): JSX.Element {
           }
         }}
         onSubmit={handleRenameSubmit}
+      />
+      <DeleteProjectDialog
+        open={deleteDialogOpen}
+        projectName={deleteTargetProject?.name ?? ""}
+        documentCount={0}
+        submitting={deleteSubmitting}
+        onOpenChange={(open) => {
+          setDeleteDialogOpen(open);
+          if (!open) {
+            setDeleteTargetProject(null);
+          }
+        }}
+        onConfirm={handleDeleteConfirm}
       />
       <SystemDialog {...dialogProps} />
     </>

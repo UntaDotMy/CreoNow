@@ -20,7 +20,11 @@ export function registerProjectIpcHandlers(deps: {
     "project:project:create",
     async (
       _e,
-      payload: { name?: string },
+      payload: {
+        name?: string;
+        type?: "novel" | "screenplay" | "media";
+        description?: string;
+      },
     ): Promise<IpcResponse<{ projectId: string; rootPath: string }>> => {
       if (!deps.db) {
         return {
@@ -33,7 +37,43 @@ export function registerProjectIpcHandlers(deps: {
         userDataDir: deps.userDataDir,
         logger: deps.logger,
       });
-      const res = svc.create({ name: payload.name });
+      const res = svc.create({
+        name: payload.name,
+        type: payload.type,
+        description: payload.description,
+      });
+      return res.ok
+        ? { ok: true, data: res.data }
+        : { ok: false, error: res.error };
+    },
+  );
+
+  deps.ipcMain.handle(
+    "project:project:createaiassist",
+    async (
+      _e,
+      payload: { prompt: string },
+    ): Promise<
+      IpcResponse<{
+        name: string;
+        type: "novel" | "screenplay" | "media";
+        description: string;
+        chapterOutlines: string[];
+        characters: string[];
+      }>
+    > => {
+      if (!deps.db) {
+        return {
+          ok: false,
+          error: { code: "DB_ERROR", message: "Database not ready" },
+        };
+      }
+      const svc = createProjectService({
+        db: deps.db,
+        userDataDir: deps.userDataDir,
+        logger: deps.logger,
+      });
+      const res = svc.createAiAssistDraft({ prompt: payload.prompt });
       return res.ok
         ? { ok: true, data: res.data }
         : { ok: false, error: res.error };
@@ -51,6 +91,8 @@ export function registerProjectIpcHandlers(deps: {
           projectId: string;
           name: string;
           rootPath: string;
+          type: "novel" | "screenplay" | "media";
+          stage: "outline" | "draft" | "revision" | "final";
           updatedAt: number;
           archivedAt?: number;
         }>;
@@ -68,6 +110,70 @@ export function registerProjectIpcHandlers(deps: {
         logger: deps.logger,
       });
       const res = svc.list({ includeArchived: payload.includeArchived });
+      return res.ok
+        ? { ok: true, data: res.data }
+        : { ok: false, error: res.error };
+    },
+  );
+
+  deps.ipcMain.handle(
+    "project:project:update",
+    async (
+      _e,
+      payload: {
+        projectId: string;
+        patch: {
+          type?: "novel" | "screenplay" | "media";
+          description?: string;
+          stage?: "outline" | "draft" | "revision" | "final";
+          targetWordCount?: number | null;
+          targetChapterCount?: number | null;
+          narrativePerson?: "first" | "third-limited" | "third-omniscient";
+          languageStyle?: string;
+          targetAudience?: string;
+          defaultSkillSetId?: string | null;
+          knowledgeGraphId?: string | null;
+        };
+      },
+    ): Promise<IpcResponse<{ updated: true }>> => {
+      if (!deps.db) {
+        return {
+          ok: false,
+          error: { code: "DB_ERROR", message: "Database not ready" },
+        };
+      }
+      const svc = createProjectService({
+        db: deps.db,
+        userDataDir: deps.userDataDir,
+        logger: deps.logger,
+      });
+      const res = svc.update({
+        projectId: payload.projectId,
+        patch: payload.patch,
+      });
+      return res.ok
+        ? { ok: true, data: res.data }
+        : { ok: false, error: res.error };
+    },
+  );
+
+  deps.ipcMain.handle(
+    "project:project:stats",
+    async (): Promise<
+      IpcResponse<{ total: number; active: number; archived: number }>
+    > => {
+      if (!deps.db) {
+        return {
+          ok: false,
+          error: { code: "DB_ERROR", message: "Database not ready" },
+        };
+      }
+      const svc = createProjectService({
+        db: deps.db,
+        userDataDir: deps.userDataDir,
+        logger: deps.logger,
+      });
+      const res = svc.stats();
       return res.ok
         ? { ok: true, data: res.data }
         : { ok: false, error: res.error };
@@ -204,6 +310,45 @@ export function registerProjectIpcHandlers(deps: {
   );
 
   deps.ipcMain.handle(
+    "project:project:switch",
+    async (
+      _e,
+      payload: {
+        projectId: string;
+        fromProjectId: string;
+        operatorId: string;
+        traceId: string;
+      },
+    ): Promise<
+      IpcResponse<{
+        currentProjectId: string;
+        switchedAt: string;
+      }>
+    > => {
+      if (!deps.db) {
+        return {
+          ok: false,
+          error: { code: "DB_ERROR", message: "Database not ready" },
+        };
+      }
+      const svc = createProjectService({
+        db: deps.db,
+        userDataDir: deps.userDataDir,
+        logger: deps.logger,
+      });
+      const res = svc.switchProject({
+        projectId: payload.projectId,
+        fromProjectId: payload.fromProjectId,
+        operatorId: payload.operatorId,
+        traceId: payload.traceId,
+      });
+      return res.ok
+        ? { ok: true, data: res.data }
+        : { ok: false, error: res.error };
+    },
+  );
+
+  deps.ipcMain.handle(
     "project:project:delete",
     async (
       _e,
@@ -221,6 +366,135 @@ export function registerProjectIpcHandlers(deps: {
         logger: deps.logger,
       });
       const res = svc.delete({ projectId: payload.projectId });
+      return res.ok
+        ? { ok: true, data: res.data }
+        : { ok: false, error: res.error };
+    },
+  );
+
+  deps.ipcMain.handle(
+    "project:lifecycle:archive",
+    async (
+      _e,
+      payload: { projectId: string; traceId?: string },
+    ): Promise<
+      IpcResponse<{
+        projectId: string;
+        state: "active" | "archived" | "deleted";
+        archivedAt?: number;
+      }>
+    > => {
+      if (!deps.db) {
+        return {
+          ok: false,
+          error: { code: "DB_ERROR", message: "Database not ready" },
+        };
+      }
+      const svc = createProjectService({
+        db: deps.db,
+        userDataDir: deps.userDataDir,
+        logger: deps.logger,
+      });
+      const res = svc.lifecycleArchive({
+        projectId: payload.projectId,
+        traceId: payload.traceId,
+      });
+      return res.ok
+        ? { ok: true, data: res.data }
+        : { ok: false, error: res.error };
+    },
+  );
+
+  deps.ipcMain.handle(
+    "project:lifecycle:restore",
+    async (
+      _e,
+      payload: { projectId: string; traceId?: string },
+    ): Promise<
+      IpcResponse<{
+        projectId: string;
+        state: "active" | "archived" | "deleted";
+      }>
+    > => {
+      if (!deps.db) {
+        return {
+          ok: false,
+          error: { code: "DB_ERROR", message: "Database not ready" },
+        };
+      }
+      const svc = createProjectService({
+        db: deps.db,
+        userDataDir: deps.userDataDir,
+        logger: deps.logger,
+      });
+      const res = svc.lifecycleRestore({
+        projectId: payload.projectId,
+        traceId: payload.traceId,
+      });
+      return res.ok
+        ? { ok: true, data: res.data }
+        : { ok: false, error: res.error };
+    },
+  );
+
+  deps.ipcMain.handle(
+    "project:lifecycle:purge",
+    async (
+      _e,
+      payload: { projectId: string; traceId?: string },
+    ): Promise<
+      IpcResponse<{
+        projectId: string;
+        state: "active" | "archived" | "deleted";
+      }>
+    > => {
+      if (!deps.db) {
+        return {
+          ok: false,
+          error: { code: "DB_ERROR", message: "Database not ready" },
+        };
+      }
+      const svc = createProjectService({
+        db: deps.db,
+        userDataDir: deps.userDataDir,
+        logger: deps.logger,
+      });
+      const res = svc.lifecyclePurge({
+        projectId: payload.projectId,
+        traceId: payload.traceId,
+      });
+      return res.ok
+        ? { ok: true, data: res.data }
+        : { ok: false, error: res.error };
+    },
+  );
+
+  deps.ipcMain.handle(
+    "project:lifecycle:get",
+    async (
+      _e,
+      payload: { projectId: string; traceId?: string },
+    ): Promise<
+      IpcResponse<{
+        projectId: string;
+        state: "active" | "archived" | "deleted";
+      }>
+    > => {
+      if (!deps.db) {
+        return {
+          ok: false,
+          error: { code: "DB_ERROR", message: "Database not ready" },
+        };
+      }
+      const svc = createProjectService({
+        db: deps.db,
+        userDataDir: deps.userDataDir,
+        logger: deps.logger,
+      });
+      const res = svc.lifecycleGet({
+        projectId: payload.projectId,
+        traceId: payload.traceId,
+      });
       return res.ok
         ? { ok: true, data: res.data }
         : { ok: false, error: res.error };

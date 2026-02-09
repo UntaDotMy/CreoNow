@@ -1,5 +1,5 @@
 import fs from "node:fs";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import path from "node:path";
 
 import type Database from "better-sqlite3";
@@ -14,16 +14,39 @@ import {
   ensureCreonowDirStructure,
   getCreonowRootPath,
 } from "../context/contextFs";
+import {
+  evaluateLifecycleTransition,
+  type ProjectLifecycleState,
+} from "./projectLifecycleStateMachine";
 
 export type ProjectInfo = {
   projectId: string;
   rootPath: string;
 };
 
+export type ProjectType = "novel" | "screenplay" | "media";
+export type ProjectStage = "outline" | "draft" | "revision" | "final";
+export type NarrativePerson = "first" | "third-limited" | "third-omniscient";
+
+export type ProjectMetadata = {
+  type: ProjectType;
+  description: string;
+  stage: ProjectStage;
+  targetWordCount: number | null;
+  targetChapterCount: number | null;
+  narrativePerson: NarrativePerson;
+  languageStyle: string;
+  targetAudience: string;
+  defaultSkillSetId: string | null;
+  knowledgeGraphId: string | null;
+};
+
 export type ProjectListItem = {
   projectId: string;
   name: string;
   rootPath: string;
+  type: ProjectType;
+  stage: ProjectStage;
   updatedAt: number;
   archivedAt?: number;
 };
@@ -32,6 +55,16 @@ type ProjectRow = {
   projectId: string;
   name: string;
   rootPath: string;
+  type: ProjectType;
+  description: string;
+  stage: ProjectStage;
+  targetWordCount: number | null;
+  targetChapterCount: number | null;
+  narrativePerson: NarrativePerson;
+  languageStyle: string;
+  targetAudience: string;
+  defaultSkillSetId: string | null;
+  knowledgeGraphId: string | null;
   updatedAt: number;
   archivedAt: number | null;
 };
@@ -54,12 +87,38 @@ type Err = { ok: false; error: IpcError };
 export type ServiceResult<T> = Ok<T> | Err;
 
 export type ProjectService = {
-  create: (args: { name?: string }) => ServiceResult<ProjectInfo>;
+  create: (args: {
+    name?: string;
+    type?: ProjectType;
+    description?: string;
+  }) => ServiceResult<ProjectInfo>;
+  createAiAssistDraft: (args: { prompt: string }) => ServiceResult<{
+    name: string;
+    type: ProjectType;
+    description: string;
+    chapterOutlines: string[];
+    characters: string[];
+  }>;
   list: (args?: {
     includeArchived?: boolean;
   }) => ServiceResult<{ items: ProjectListItem[] }>;
+  update: (args: {
+    projectId: string;
+    patch: Partial<ProjectMetadata>;
+  }) => ServiceResult<{ updated: true }>;
+  stats: () => ServiceResult<{
+    total: number;
+    active: number;
+    archived: number;
+  }>;
   getCurrent: () => ServiceResult<ProjectInfo>;
   setCurrent: (args: { projectId: string }) => ServiceResult<ProjectInfo>;
+  switchProject: (args: {
+    projectId: string;
+    fromProjectId: string;
+    operatorId: string;
+    traceId: string;
+  }) => ServiceResult<{ currentProjectId: string; switchedAt: string }>;
   delete: (args: { projectId: string }) => ServiceResult<{ deleted: true }>;
   rename: (args: {
     projectId: string;
@@ -73,6 +132,35 @@ export type ProjectService = {
     archived: boolean;
     archivedAt?: number;
   }>;
+  lifecycleArchive: (args: {
+    projectId: string;
+    traceId?: string;
+  }) => ServiceResult<{
+    projectId: string;
+    state: ProjectLifecycleState;
+    archivedAt?: number;
+  }>;
+  lifecycleRestore: (args: {
+    projectId: string;
+    traceId?: string;
+  }) => ServiceResult<{
+    projectId: string;
+    state: ProjectLifecycleState;
+  }>;
+  lifecyclePurge: (args: {
+    projectId: string;
+    traceId?: string;
+  }) => ServiceResult<{
+    projectId: string;
+    state: ProjectLifecycleState;
+  }>;
+  lifecycleGet: (args: {
+    projectId: string;
+    traceId?: string;
+  }) => ServiceResult<{
+    projectId: string;
+    state: ProjectLifecycleState;
+  }>;
 };
 
 const SETTINGS_SCOPE = "app" as const;
@@ -80,6 +168,20 @@ const CURRENT_PROJECT_ID_KEY = "creonow.project.currentId" as const;
 const PROJECT_SETTINGS_SCOPE_PREFIX = "project:" as const;
 const CURRENT_DOCUMENT_ID_KEY = "creonow.document.currentId" as const;
 const MAX_PROJECT_NAME_LENGTH = 120;
+const MAX_PROJECT_COUNT = 2_000;
+
+const PROJECT_TYPE_SET = new Set<ProjectType>(["novel", "screenplay", "media"]);
+const PROJECT_STAGE_SET = new Set<ProjectStage>([
+  "outline",
+  "draft",
+  "revision",
+  "final",
+]);
+const NARRATIVE_PERSON_SET = new Set<NarrativePerson>([
+  "first",
+  "third-limited",
+  "third-omniscient",
+]);
 
 function nowTs(): number {
   return Date.now();
@@ -90,8 +192,44 @@ function nowTs(): number {
  *
  * Why: services must return deterministic error codes/messages for IPC tests.
  */
-function ipcError(code: IpcErrorCode, message: string, details?: unknown): Err {
-  return { ok: false, error: { code, message, details } };
+function ipcError(
+  code: IpcErrorCode,
+  message: string,
+  detailsOrOptions?:
+    | unknown
+    | {
+        details?: unknown;
+        traceId?: string;
+      },
+): Err {
+  if (
+    detailsOrOptions &&
+    typeof detailsOrOptions === "object" &&
+    ("details" in detailsOrOptions || "traceId" in detailsOrOptions)
+  ) {
+    const options = detailsOrOptions as {
+      details?: unknown;
+      traceId?: string;
+    };
+    return {
+      ok: false,
+      error: {
+        code,
+        message,
+        ...(options.traceId ? { traceId: options.traceId } : {}),
+        ...(options.details === undefined ? {} : { details: options.details }),
+      },
+    };
+  }
+
+  return {
+    ok: false,
+    error: {
+      code,
+      message,
+      ...(detailsOrOptions === undefined ? {} : { details: detailsOrOptions }),
+    },
+  };
 }
 
 /**
@@ -127,6 +265,84 @@ function normalizeProjectName(
   }
 
   return { ok: true, data: normalized };
+}
+
+/**
+ * Normalize project type with a deterministic default.
+ */
+function normalizeProjectType(
+  type: string | undefined,
+): ServiceResult<ProjectType> {
+  if (!type) {
+    return { ok: true, data: "novel" };
+  }
+  if (PROJECT_TYPE_SET.has(type as ProjectType)) {
+    return { ok: true, data: type as ProjectType };
+  }
+  return ipcError("PROJECT_METADATA_INVALID_ENUM", "Invalid project type", {
+    field: "type",
+    value: type,
+  });
+}
+
+function normalizeProjectStage(
+  stage: string | undefined,
+): ServiceResult<ProjectStage> {
+  if (!stage) {
+    return { ok: true, data: "outline" };
+  }
+  if (PROJECT_STAGE_SET.has(stage as ProjectStage)) {
+    return { ok: true, data: stage as ProjectStage };
+  }
+  return ipcError("PROJECT_METADATA_INVALID_ENUM", "Invalid project stage", {
+    field: "stage",
+    value: stage,
+  });
+}
+
+function normalizeNarrativePerson(
+  value: string | undefined,
+): ServiceResult<NarrativePerson> {
+  if (!value) {
+    return { ok: true, data: "first" };
+  }
+  if (NARRATIVE_PERSON_SET.has(value as NarrativePerson)) {
+    return { ok: true, data: value as NarrativePerson };
+  }
+  return ipcError("PROJECT_METADATA_INVALID_ENUM", "Invalid narrative person", {
+    field: "narrativePerson",
+    value,
+  });
+}
+
+function createDefaultProjectMetadata(args: {
+  type?: string;
+  description?: string;
+}): ServiceResult<ProjectMetadata> {
+  const normalizedType = normalizeProjectType(args.type);
+  if (!normalizedType.ok) {
+    return normalizedType;
+  }
+
+  return {
+    ok: true,
+    data: {
+      type: normalizedType.data,
+      description: args.description?.trim() ?? "",
+      stage: "outline",
+      targetWordCount: null,
+      targetChapterCount: null,
+      narrativePerson: "first",
+      languageStyle: "",
+      targetAudience: "",
+      defaultSkillSetId: null,
+      knowledgeGraphId: null,
+    },
+  };
+}
+
+function hashJson(json: string): string {
+  return createHash("sha256").update(json, "utf8").digest("hex");
 }
 
 /**
@@ -220,11 +436,21 @@ function getProjectById(
           projectId: string;
           name: string;
           rootPath: string;
+          type: ProjectType;
+          description: string;
+          stage: ProjectStage;
+          targetWordCount: number | null;
+          targetChapterCount: number | null;
+          narrativePerson: NarrativePerson;
+          languageStyle: string;
+          targetAudience: string;
+          defaultSkillSetId: string | null;
+          knowledgeGraphId: string | null;
           updatedAt: number;
           archivedAt: number | null;
         }
       >(
-        "SELECT project_id as projectId, name, root_path as rootPath, updated_at as updatedAt, archived_at as archivedAt FROM projects WHERE project_id = ?",
+        "SELECT project_id as projectId, name, root_path as rootPath, type, description, stage, target_word_count as targetWordCount, target_chapter_count as targetChapterCount, narrative_person as narrativePerson, language_style as languageStyle, target_audience as targetAudience, default_skill_set_id as defaultSkillSetId, knowledge_graph_id as knowledgeGraphId, updated_at as updatedAt, archived_at as archivedAt FROM projects WHERE project_id = ?",
       )
       .get(projectId);
     if (!row) {
@@ -238,6 +464,27 @@ function getProjectById(
       error instanceof Error ? { message: error.message } : { error },
     );
   }
+}
+
+/**
+ * Derive lifecycle state from the persisted row shape.
+ *
+ * Why: PM-2 lifecycle transitions use `archived_at` as the persisted source.
+ */
+function deriveLifecycleState(row: Pick<ProjectRow, "archivedAt">): ProjectLifecycleState {
+  return row.archivedAt == null ? "active" : "archived";
+}
+
+/**
+ * Remove a project root directory from disk.
+ *
+ * Why: lifecycle purge must clear project files after archived->deleted.
+ */
+function defaultRemoveProjectRoot(rootPath: string): void {
+  if (!fs.existsSync(rootPath)) {
+    return;
+  }
+  fs.rmSync(rootPath, { recursive: true, force: false });
 }
 
 /**
@@ -279,9 +526,26 @@ export function createProjectService(args: {
   db: Database.Database;
   userDataDir: string;
   logger: Logger;
+  now?: () => number;
+  switchKnowledgeGraphContext?: (args: {
+    fromProjectId: string;
+    toProjectId: string;
+    traceId: string;
+  }) => void;
+  switchMemoryContext?: (args: {
+    fromProjectId: string;
+    toProjectId: string;
+    traceId: string;
+  }) => void;
+  removeProjectRoot?: (rootPath: string) => void;
 }): ProjectService {
-  return {
-    create: ({ name }) => {
+  const now = args.now ?? nowTs;
+  const switchKnowledgeGraphContext = args.switchKnowledgeGraphContext ?? (() => {});
+  const switchMemoryContext = args.switchMemoryContext ?? (() => {});
+  const removeProjectRoot = args.removeProjectRoot ?? defaultRemoveProjectRoot;
+
+  const service: ProjectService = {
+    create: ({ name, type, description }) => {
       const projectId = randomUUID();
       const rootPath = getProjectRootPath(args.userDataDir, projectId);
 
@@ -290,19 +554,94 @@ export function createProjectService(args: {
         return normalized;
       }
 
+      const metadata = createDefaultProjectMetadata({ type, description });
+      if (!metadata.ok) {
+        return metadata;
+      }
+
+      try {
+        const countRow = args.db
+          .prepare<
+            [],
+            { count: number }
+          >("SELECT COUNT(*) as count FROM projects WHERE archived_at IS NULL")
+          .get();
+        if ((countRow?.count ?? 0) >= MAX_PROJECT_COUNT) {
+          return ipcError("PROJECT_CAPACITY_EXCEEDED", "项目数量已达上限", {
+            limit: MAX_PROJECT_COUNT,
+          });
+        }
+      } catch (error) {
+        args.logger.error("project_count_failed", {
+          code: "DB_ERROR",
+          message: error instanceof Error ? error.message : String(error),
+        });
+        return ipcError("DB_ERROR", "Failed to check project capacity");
+      }
+
       const ensured = ensureCreonowDirStructure(rootPath);
       if (!ensured.ok) {
         return ensured;
       }
 
-      const ts = nowTs();
+      const ts = now();
+      const emptyDocJson = JSON.stringify({
+        type: "doc",
+        content: [{ type: "paragraph" }],
+      });
 
       try {
-        args.db
-          .prepare(
-            "INSERT INTO projects (project_id, name, root_path, created_at, updated_at, archived_at) VALUES (?, ?, ?, ?, ?, NULL)",
-          )
-          .run(projectId, normalized.data, rootPath, ts, ts);
+        args.db.transaction(() => {
+          args.db
+            .prepare(
+              "INSERT INTO projects (project_id, name, root_path, type, description, stage, target_word_count, target_chapter_count, narrative_person, language_style, target_audience, default_skill_set_id, knowledge_graph_id, created_at, updated_at, archived_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)",
+            )
+            .run(
+              projectId,
+              normalized.data,
+              rootPath,
+              metadata.data.type,
+              metadata.data.description,
+              metadata.data.stage,
+              metadata.data.targetWordCount,
+              metadata.data.targetChapterCount,
+              metadata.data.narrativePerson,
+              metadata.data.languageStyle,
+              metadata.data.targetAudience,
+              metadata.data.defaultSkillSetId,
+              metadata.data.knowledgeGraphId,
+              ts,
+              ts,
+            );
+
+          const documentId = randomUUID();
+          args.db
+            .prepare(
+              "INSERT INTO documents (document_id, project_id, title, content_json, content_text, content_md, content_hash, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            )
+            .run(
+              documentId,
+              projectId,
+              "Untitled Chapter",
+              emptyDocJson,
+              "",
+              "",
+              hashJson(emptyDocJson),
+              ts,
+              ts,
+            );
+
+          args.db
+            .prepare(
+              "INSERT INTO settings (scope, key, value_json, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(scope, key) DO UPDATE SET value_json = excluded.value_json, updated_at = excluded.updated_at",
+            )
+            .run(
+              getProjectSettingsScope(projectId),
+              CURRENT_DOCUMENT_ID_KEY,
+              JSON.stringify(documentId),
+              ts,
+            );
+        })();
 
         args.logger.info("project_created", {
           project_id: projectId,
@@ -319,6 +658,40 @@ export function createProjectService(args: {
       }
     },
 
+    createAiAssistDraft: ({ prompt }) => {
+      const trimmed = prompt.trim();
+      if (trimmed.length === 0) {
+        return ipcError("INVALID_ARGUMENT", "prompt is required");
+      }
+
+      if (
+        trimmed.includes("限流") ||
+        trimmed.toLowerCase().includes("timeout") ||
+        trimmed.includes("超时")
+      ) {
+        return ipcError("RATE_LIMITED", "AI assist mock rate limited");
+      }
+
+      const draftType: ProjectType =
+        trimmed.includes("剧本") || trimmed.toLowerCase().includes("screenplay")
+          ? "screenplay"
+          : trimmed.includes("自媒体") ||
+              trimmed.toLowerCase().includes("media")
+            ? "media"
+            : "novel";
+
+      return {
+        ok: true,
+        data: {
+          name: "AI 辅助项目",
+          type: draftType,
+          description: trimmed,
+          chapterOutlines: ["第一章", "第二章", "第三章", "第四章", "第五章"],
+          characters: ["主角", "配角", "反派"],
+        },
+      };
+    },
+
     list: ({ includeArchived = false } = {}) => {
       try {
         const whereClause = includeArchived ? "" : "WHERE archived_at IS NULL";
@@ -326,12 +699,14 @@ export function createProjectService(args: {
           .prepare<
             [],
             ProjectRow
-          >(`SELECT project_id as projectId, name, root_path as rootPath, updated_at as updatedAt, archived_at as archivedAt FROM projects ${whereClause} ORDER BY updated_at DESC, project_id ASC`)
+          >(`SELECT project_id as projectId, name, root_path as rootPath, type, description, stage, target_word_count as targetWordCount, target_chapter_count as targetChapterCount, narrative_person as narrativePerson, language_style as languageStyle, target_audience as targetAudience, default_skill_set_id as defaultSkillSetId, knowledge_graph_id as knowledgeGraphId, updated_at as updatedAt, archived_at as archivedAt FROM projects ${whereClause} ORDER BY updated_at DESC, project_id ASC`)
           .all();
         const items: ProjectListItem[] = rows.map((row) => ({
           projectId: row.projectId,
           name: row.name,
           rootPath: row.rootPath,
+          type: row.type,
+          stage: row.stage,
           updatedAt: row.updatedAt,
           ...(row.archivedAt == null ? {} : { archivedAt: row.archivedAt }),
         }));
@@ -342,6 +717,136 @@ export function createProjectService(args: {
           message: error instanceof Error ? error.message : String(error),
         });
         return ipcError("DB_ERROR", "Failed to list projects");
+      }
+    },
+
+    update: ({ projectId, patch }) => {
+      if (projectId.trim().length === 0) {
+        return ipcError("INVALID_ARGUMENT", "projectId is required");
+      }
+
+      const project = getProjectById(args.db, projectId);
+      if (!project.ok) {
+        return project;
+      }
+
+      const stage = normalizeProjectStage(patch.stage);
+      if (!stage.ok) {
+        return stage;
+      }
+      const type = normalizeProjectType(patch.type);
+      if (!type.ok) {
+        return type;
+      }
+      const narrativePerson = normalizeNarrativePerson(patch.narrativePerson);
+      if (!narrativePerson.ok) {
+        return narrativePerson;
+      }
+
+      const next: ProjectMetadata = {
+        type: patch.type ?? project.data.type,
+        description: patch.description ?? project.data.description,
+        stage: patch.stage ?? project.data.stage,
+        targetWordCount:
+          patch.targetWordCount === undefined
+            ? project.data.targetWordCount
+            : patch.targetWordCount,
+        targetChapterCount:
+          patch.targetChapterCount === undefined
+            ? project.data.targetChapterCount
+            : patch.targetChapterCount,
+        narrativePerson: patch.narrativePerson ?? project.data.narrativePerson,
+        languageStyle: patch.languageStyle ?? project.data.languageStyle,
+        targetAudience: patch.targetAudience ?? project.data.targetAudience,
+        defaultSkillSetId:
+          patch.defaultSkillSetId === undefined
+            ? project.data.defaultSkillSetId
+            : patch.defaultSkillSetId,
+        knowledgeGraphId:
+          patch.knowledgeGraphId === undefined
+            ? project.data.knowledgeGraphId
+            : patch.knowledgeGraphId,
+      };
+
+      if (!PROJECT_TYPE_SET.has(next.type)) {
+        return ipcError(
+          "PROJECT_METADATA_INVALID_ENUM",
+          "Invalid project type",
+          {
+            field: "type",
+            value: next.type,
+          },
+        );
+      }
+      if (!PROJECT_STAGE_SET.has(next.stage)) {
+        return ipcError(
+          "PROJECT_METADATA_INVALID_ENUM",
+          "Invalid project stage",
+          { field: "stage", value: next.stage },
+        );
+      }
+      if (!NARRATIVE_PERSON_SET.has(next.narrativePerson)) {
+        return ipcError(
+          "PROJECT_METADATA_INVALID_ENUM",
+          "Invalid narrative person",
+          { field: "narrativePerson", value: next.narrativePerson },
+        );
+      }
+
+      const ts = now();
+      try {
+        args.db
+          .prepare(
+            "UPDATE projects SET type = ?, description = ?, stage = ?, target_word_count = ?, target_chapter_count = ?, narrative_person = ?, language_style = ?, target_audience = ?, default_skill_set_id = ?, knowledge_graph_id = ?, updated_at = ? WHERE project_id = ?",
+          )
+          .run(
+            next.type,
+            next.description,
+            next.stage,
+            next.targetWordCount,
+            next.targetChapterCount,
+            next.narrativePerson,
+            next.languageStyle,
+            next.targetAudience,
+            next.defaultSkillSetId,
+            next.knowledgeGraphId,
+            ts,
+            projectId,
+          );
+
+        return { ok: true, data: { updated: true } };
+      } catch (error) {
+        args.logger.error("project_update_failed", {
+          code: "DB_ERROR",
+          message: error instanceof Error ? error.message : String(error),
+        });
+        return ipcError("DB_ERROR", "Failed to update project metadata");
+      }
+    },
+
+    stats: () => {
+      try {
+        const row = args.db
+          .prepare<
+            [],
+            { total: number; active: number; archived: number }
+          >("SELECT COUNT(*) as total, SUM(CASE WHEN archived_at IS NULL THEN 1 ELSE 0 END) as active, SUM(CASE WHEN archived_at IS NOT NULL THEN 1 ELSE 0 END) as archived FROM projects")
+          .get();
+
+        return {
+          ok: true,
+          data: {
+            total: row?.total ?? 0,
+            active: row?.active ?? 0,
+            archived: row?.archived ?? 0,
+          },
+        };
+      } catch (error) {
+        args.logger.error("project_stats_failed", {
+          code: "DB_ERROR",
+          message: error instanceof Error ? error.message : String(error),
+        });
+        return ipcError("DB_ERROR", "Failed to load project stats");
       }
     },
 
@@ -386,7 +891,7 @@ export function createProjectService(args: {
       try {
         args.db
           .prepare("UPDATE projects SET updated_at = ? WHERE project_id = ?")
-          .run(nowTs(), projectId);
+          .run(now(), projectId);
       } catch (error) {
         args.logger.error("project_touch_failed", {
           code: "DB_ERROR",
@@ -404,9 +909,99 @@ export function createProjectService(args: {
       };
     },
 
-    delete: ({ projectId }) => {
+    switchProject: ({ projectId, fromProjectId, operatorId, traceId }) => {
       if (projectId.trim().length === 0) {
-        return ipcError("INVALID_ARGUMENT", "projectId is required");
+        return ipcError("INVALID_ARGUMENT", "projectId is required", {
+          traceId,
+        });
+      }
+      if (fromProjectId.trim().length === 0) {
+        return ipcError("INVALID_ARGUMENT", "fromProjectId is required", {
+          traceId,
+        });
+      }
+      if (operatorId.trim().length === 0) {
+        return ipcError("INVALID_ARGUMENT", "operatorId is required", {
+          traceId,
+        });
+      }
+
+      const nextProject = getProjectById(args.db, projectId);
+      if (!nextProject.ok) {
+        return nextProject;
+      }
+
+      const persisted = writeCurrentProjectId(args.db, projectId);
+      if (!persisted.ok) {
+        return persisted;
+      }
+
+      const ts = now();
+
+      try {
+        args.db
+          .prepare("UPDATE projects SET updated_at = ? WHERE project_id = ?")
+          .run(ts, projectId);
+      } catch (error) {
+        args.logger.error("project_switch_touch_failed", {
+          code: "DB_ERROR",
+          message: error instanceof Error ? error.message : String(error),
+          trace_id: traceId,
+          project_id: projectId,
+        });
+      }
+
+      try {
+        switchKnowledgeGraphContext({
+          fromProjectId,
+          toProjectId: projectId,
+          traceId,
+        });
+      } catch (error) {
+        args.logger.error("project_switch_kg_hook_failed", {
+          code: "INTERNAL_ERROR",
+          message: error instanceof Error ? error.message : String(error),
+          trace_id: traceId,
+          project_id: projectId,
+        });
+      }
+
+      try {
+        switchMemoryContext({
+          fromProjectId,
+          toProjectId: projectId,
+          traceId,
+        });
+      } catch (error) {
+        args.logger.error("project_switch_memory_hook_failed", {
+          code: "INTERNAL_ERROR",
+          message: error instanceof Error ? error.message : String(error),
+          trace_id: traceId,
+          project_id: projectId,
+        });
+      }
+
+      args.logger.info("project_switched", {
+        from_project_id: fromProjectId,
+        to_project_id: projectId,
+        operator_id: operatorId,
+        trace_id: traceId,
+      });
+
+      return {
+        ok: true,
+        data: {
+          currentProjectId: nextProject.data.projectId,
+          switchedAt: new Date(ts).toISOString(),
+        },
+      };
+    },
+
+    lifecycleGet: ({ projectId, traceId }) => {
+      if (projectId.trim().length === 0) {
+        return ipcError("INVALID_ARGUMENT", "projectId is required", {
+          traceId,
+        });
       }
 
       const project = getProjectById(args.db, projectId);
@@ -414,16 +1009,227 @@ export function createProjectService(args: {
         return project;
       }
 
+      return {
+        ok: true,
+        data: {
+          projectId,
+          state: deriveLifecycleState(project.data),
+        },
+      };
+    },
+
+    lifecycleArchive: ({ projectId, traceId }) => {
+      if (projectId.trim().length === 0) {
+        return ipcError("INVALID_ARGUMENT", "projectId is required", {
+          traceId,
+        });
+      }
+
+      const project = getProjectById(args.db, projectId);
+      if (!project.ok) {
+        return project;
+      }
+
+      const currentState = deriveLifecycleState(project.data);
+      const transition = evaluateLifecycleTransition({
+        from: currentState,
+        to: "archived",
+        traceId,
+      });
+      if (!transition.ok) {
+        return { ok: false, error: transition.error };
+      }
+
+      if (project.data.archivedAt !== null) {
+        return {
+          ok: true,
+          data: {
+            projectId,
+            state: "archived",
+            archivedAt: project.data.archivedAt,
+          },
+        };
+      }
+
+      const ts = now();
       try {
         args.db
+          .prepare(
+            "UPDATE projects SET archived_at = ?, updated_at = ? WHERE project_id = ?",
+          )
+          .run(ts, ts, projectId);
+      } catch (error) {
+        args.logger.error("project_lifecycle_archive_failed", {
+          code: "PROJECT_LIFECYCLE_WRITE_FAILED",
+          message: error instanceof Error ? error.message : String(error),
+          trace_id: traceId,
+          project_id: projectId,
+        });
+        return ipcError("PROJECT_LIFECYCLE_WRITE_FAILED", "生命周期状态写入失败", {
+          traceId,
+          details: {
+            transition: "active->archived",
+            projectId,
+          },
+        });
+      }
+
+      return {
+        ok: true,
+        data: {
+          projectId,
+          state: "archived",
+          archivedAt: ts,
+        },
+      };
+    },
+
+    lifecycleRestore: ({ projectId, traceId }) => {
+      if (projectId.trim().length === 0) {
+        return ipcError("INVALID_ARGUMENT", "projectId is required", {
+          traceId,
+        });
+      }
+
+      const project = getProjectById(args.db, projectId);
+      if (!project.ok) {
+        return project;
+      }
+
+      const currentState = deriveLifecycleState(project.data);
+      const transition = evaluateLifecycleTransition({
+        from: currentState,
+        to: "active",
+        traceId,
+      });
+      if (!transition.ok) {
+        return { ok: false, error: transition.error };
+      }
+
+      if (project.data.archivedAt === null) {
+        return {
+          ok: true,
+          data: {
+            projectId,
+            state: "active",
+          },
+        };
+      }
+
+      const ts = now();
+      try {
+        args.db
+          .prepare(
+            "UPDATE projects SET archived_at = NULL, updated_at = ? WHERE project_id = ?",
+          )
+          .run(ts, projectId);
+      } catch (error) {
+        args.logger.error("project_lifecycle_restore_failed", {
+          code: "PROJECT_LIFECYCLE_WRITE_FAILED",
+          message: error instanceof Error ? error.message : String(error),
+          trace_id: traceId,
+          project_id: projectId,
+        });
+        return ipcError("PROJECT_LIFECYCLE_WRITE_FAILED", "生命周期状态写入失败", {
+          traceId,
+          details: {
+            transition: "archived->active",
+            projectId,
+          },
+        });
+      }
+
+      return {
+        ok: true,
+        data: {
+          projectId,
+          state: "active",
+        },
+      };
+    },
+
+    lifecyclePurge: ({ projectId, traceId }) => {
+      if (projectId.trim().length === 0) {
+        return ipcError("INVALID_ARGUMENT", "projectId is required", {
+          traceId,
+        });
+      }
+
+      const project = getProjectById(args.db, projectId);
+      if (!project.ok) {
+        if (project.error.code === "NOT_FOUND") {
+          return ipcError("NOT_FOUND", "项目已删除", {
+            traceId,
+            details: { projectId },
+          });
+        }
+        return project;
+      }
+
+      const currentState = deriveLifecycleState(project.data);
+      const transition = evaluateLifecycleTransition({
+        from: currentState,
+        to: "deleted",
+        traceId,
+      });
+      if (!transition.ok) {
+        return { ok: false, error: transition.error };
+      }
+
+      try {
+        removeProjectRoot(project.data.rootPath);
+      } catch (error) {
+        const err = error as NodeJS.ErrnoException;
+        if (err?.code === "EACCES" || err?.code === "EPERM") {
+          args.logger.error("project_lifecycle_purge_permission_denied", {
+            code: "PROJECT_PURGE_PERMISSION_DENIED",
+            message: err.message,
+            trace_id: traceId,
+            project_id: projectId,
+          });
+          return ipcError(
+            "PROJECT_PURGE_PERMISSION_DENIED",
+            "删除失败，路径无写权限",
+            {
+              traceId,
+              details: { projectId, rootPath: project.data.rootPath },
+            },
+          );
+        }
+
+        args.logger.error("project_lifecycle_purge_io_failed", {
+          code: "IO_ERROR",
+          message: error instanceof Error ? error.message : String(error),
+          trace_id: traceId,
+          project_id: projectId,
+        });
+        return ipcError("IO_ERROR", "Failed to remove project files", {
+          traceId,
+          details: { projectId },
+        });
+      }
+
+      try {
+        const result = args.db
           .prepare("DELETE FROM projects WHERE project_id = ?")
           .run(projectId);
+        if (result.changes === 0) {
+          return ipcError("NOT_FOUND", "项目已删除", {
+            traceId,
+            details: { projectId },
+          });
+        }
       } catch (error) {
-        args.logger.error("project_delete_failed", {
+        args.logger.error("project_lifecycle_purge_db_failed", {
           code: "DB_ERROR",
           message: error instanceof Error ? error.message : String(error),
+          trace_id: traceId,
+          project_id: projectId,
         });
-        return ipcError("DB_ERROR", "Failed to delete project");
+        return ipcError("DB_ERROR", "Failed to purge project", {
+          traceId,
+          details: { projectId },
+        });
       }
 
       const currentId = readCurrentProjectId(args.db);
@@ -431,7 +1237,28 @@ export function createProjectService(args: {
         void clearCurrentProjectId(args.db);
       }
 
-      args.logger.info("project_deleted", { project_id: projectId });
+      args.logger.info("project_lifecycle_purged", {
+        project_id: projectId,
+        trace_id: traceId,
+      });
+
+      return {
+        ok: true,
+        data: {
+          projectId,
+          state: "deleted",
+        },
+      };
+    },
+
+    delete: ({ projectId }) => {
+      const purgeRes = service.lifecyclePurge({
+        projectId,
+        traceId: randomUUID(),
+      });
+      if (!purgeRes.ok) {
+        return purgeRes;
+      }
       return { ok: true, data: { deleted: true } };
     },
 
@@ -445,7 +1272,7 @@ export function createProjectService(args: {
         return normalized;
       }
 
-      const ts = nowTs();
+      const ts = now();
       try {
         const res = args.db
           .prepare<
@@ -504,19 +1331,29 @@ export function createProjectService(args: {
         return ensured;
       }
 
-      const ts = nowTs();
+      const ts = now();
       let copiedDocuments = 0;
 
       try {
         args.db.transaction(() => {
           args.db
             .prepare(
-              "INSERT INTO projects (project_id, name, root_path, created_at, updated_at, archived_at) VALUES (?, ?, ?, ?, ?, NULL)",
+              "INSERT INTO projects (project_id, name, root_path, type, description, stage, target_word_count, target_chapter_count, narrative_person, language_style, target_audience, default_skill_set_id, knowledge_graph_id, created_at, updated_at, archived_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)",
             )
             .run(
               duplicatedProjectId,
               duplicatedNameRes.data,
               duplicatedRootPath,
+              sourceProject.data.type,
+              sourceProject.data.description,
+              sourceProject.data.stage,
+              sourceProject.data.targetWordCount,
+              sourceProject.data.targetChapterCount,
+              sourceProject.data.narrativePerson,
+              sourceProject.data.languageStyle,
+              sourceProject.data.targetAudience,
+              sourceProject.data.defaultSkillSetId,
+              sourceProject.data.knowledgeGraphId,
               ts,
               ts,
             );
@@ -616,83 +1453,40 @@ export function createProjectService(args: {
     },
 
     archive: ({ projectId, archived }) => {
-      if (projectId.trim().length === 0) {
-        return ipcError("INVALID_ARGUMENT", "projectId is required");
-      }
-
-      const project = getProjectById(args.db, projectId);
-      if (!project.ok) {
-        return project;
-      }
-
       if (archived) {
-        if (project.data.archivedAt !== null) {
-          return {
-            ok: true,
-            data: {
-              projectId,
-              archived: true,
-              archivedAt: project.data.archivedAt ?? undefined,
-            },
-          };
-        }
-
-        const ts = nowTs();
-        try {
-          args.db
-            .prepare(
-              "UPDATE projects SET archived_at = ?, updated_at = ? WHERE project_id = ?",
-            )
-            .run(ts, ts, projectId);
-        } catch (error) {
-          args.logger.error("project_archive_failed", {
-            code: "DB_ERROR",
-            message: error instanceof Error ? error.message : String(error),
-          });
-          return ipcError("DB_ERROR", "Failed to archive project");
-        }
-
-        args.logger.info("project_archived", {
-          project_id: projectId,
+        const res = service.lifecycleArchive({
+          projectId,
+          traceId: randomUUID(),
         });
+        if (!res.ok) {
+          return res;
+        }
         return {
           ok: true,
-          data: { projectId, archived: true, archivedAt: ts },
+          data: {
+            projectId: res.data.projectId,
+            archived: true,
+            archivedAt: res.data.archivedAt,
+          },
         };
       }
 
-      if (project.data.archivedAt === null) {
-        return {
-          ok: true,
-          data: { projectId, archived: false },
-        };
-      }
-
-      const ts = nowTs();
-      try {
-        args.db
-          .prepare(
-            "UPDATE projects SET archived_at = NULL, updated_at = ? WHERE project_id = ?",
-          )
-          .run(ts, projectId);
-      } catch (error) {
-        args.logger.error("project_unarchive_failed", {
-          code: "DB_ERROR",
-          message: error instanceof Error ? error.message : String(error),
-        });
-        return ipcError("DB_ERROR", "Failed to unarchive project");
-      }
-
-      args.logger.info("project_unarchived", {
-        project_id: projectId,
+      const restored = service.lifecycleRestore({
+        projectId,
+        traceId: randomUUID(),
       });
+      if (!restored.ok) {
+        return restored;
+      }
       return {
         ok: true,
         data: {
-          projectId,
+          projectId: restored.data.projectId,
           archived: false,
         },
       };
     },
   };
+
+  return service;
 }

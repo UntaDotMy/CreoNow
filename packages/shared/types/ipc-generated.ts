@@ -6,10 +6,13 @@
  */
 
 export type IpcErrorCode =
+  | "AI_PROVIDER_UNAVAILABLE"
   | "ALREADY_EXISTS"
   | "CANCELED"
   | "CONFLICT"
+  | "CONTEXT_SCOPE_VIOLATION"
   | "DB_ERROR"
+  | "DOCUMENT_SAVE_CONFLICT"
   | "ENCODING_FAILED"
   | "INTERNAL"
   | "INTERNAL_ERROR"
@@ -19,14 +22,42 @@ export type IpcErrorCode =
   | "IPC_PAYLOAD_TOO_LARGE"
   | "IPC_SUBSCRIPTION_LIMIT_EXCEEDED"
   | "IPC_TIMEOUT"
+  | "KG_ATTRIBUTE_KEYS_EXCEEDED"
+  | "KG_CAPACITY_EXCEEDED"
+  | "KG_ENTITY_CONFLICT"
+  | "KG_ENTITY_DUPLICATE"
+  | "KG_QUERY_TIMEOUT"
+  | "KG_RECOGNITION_UNAVAILABLE"
+  | "KG_RELATION_INVALID"
+  | "KG_RELEVANT_QUERY_FAILED"
+  | "KG_SCOPE_VIOLATION"
+  | "KG_SUBGRAPH_K_EXCEEDED"
+  | "MEMORY_BACKPRESSURE"
+  | "MEMORY_CAPACITY_EXCEEDED"
+  | "MEMORY_CLEAR_CONFIRM_REQUIRED"
+  | "MEMORY_CONFIDENCE_OUT_OF_RANGE"
+  | "MEMORY_DISTILL_LLM_UNAVAILABLE"
+  | "MEMORY_EPISODE_WRITE_FAILED"
+  | "MEMORY_SCOPE_DENIED"
+  | "MEMORY_TRACE_MISMATCH"
   | "MODEL_NOT_READY"
   | "NOT_FOUND"
   | "PERMISSION_DENIED"
+  | "PROJECT_CAPACITY_EXCEEDED"
+  | "PROJECT_DELETE_REQUIRES_ARCHIVE"
+  | "PROJECT_IPC_SCHEMA_INVALID"
+  | "PROJECT_LIFECYCLE_WRITE_FAILED"
+  | "PROJECT_METADATA_INVALID_ENUM"
+  | "PROJECT_PURGE_PERMISSION_DENIED"
+  | "PROJECT_SWITCH_TIMEOUT"
   | "RATE_LIMITED"
+  | "SEARCH_TIMEOUT"
+  | "SKILL_TIMEOUT"
   | "TIMEOUT"
   | "UNSUPPORTED"
   | "UPSTREAM_ERROR"
-  | "VALIDATION_ERROR";
+  | "VALIDATION_ERROR"
+  | "VERSION_MERGE_TIMEOUT";
 
 export type IpcMeta = {
   requestId: string;
@@ -36,6 +67,7 @@ export type IpcMeta = {
 export type IpcError = {
   code: IpcErrorCode;
   message: string;
+  traceId?: string;
   details?: unknown;
   retryable?: boolean;
 };
@@ -55,6 +87,7 @@ export type IpcErr = {
 export type IpcResponse<TData> = IpcOk<TData> | IpcErr;
 
 export const IPC_CHANNELS = [
+  "ai:chat:send",
   "ai:models:list",
   "ai:proxy:test",
   "ai:proxysettings:get",
@@ -80,6 +113,7 @@ export const IPC_CHANNELS = [
   "export:document:markdown",
   "export:document:pdf",
   "export:document:txt",
+  "export:project:bundle",
   "file:document:create",
   "file:document:delete",
   "file:document:getcurrent",
@@ -92,30 +126,62 @@ export const IPC_CHANNELS = [
   "file:document:updatestatus",
   "judge:model:ensure",
   "judge:model:getstate",
-  "kg:entity:create",
-  "kg:entity:delete",
-  "kg:entity:list",
-  "kg:entity:update",
-  "kg:graph:get",
-  "kg:relation:create",
-  "kg:relation:delete",
-  "kg:relation:list",
-  "kg:relation:update",
+  "knowledge:entity:create",
+  "knowledge:entity:delete",
+  "knowledge:entity:list",
+  "knowledge:entity:read",
+  "knowledge:entity:update",
+  "knowledge:query:byids",
+  "knowledge:query:path",
+  "knowledge:query:relevant",
+  "knowledge:query:subgraph",
+  "knowledge:query:validate",
+  "knowledge:recognition:cancel",
+  "knowledge:recognition:enqueue",
+  "knowledge:recognition:stats",
+  "knowledge:relation:create",
+  "knowledge:relation:delete",
+  "knowledge:relation:list",
+  "knowledge:relation:update",
+  "knowledge:rules:inject",
+  "knowledge:suggestion:accept",
+  "knowledge:suggestion:dismiss",
+  "memory:clear:all",
+  "memory:clear:project",
+  "memory:distill:progress",
   "memory:entry:create",
   "memory:entry:delete",
   "memory:entry:list",
   "memory:entry:update",
+  "memory:episode:query",
+  "memory:episode:record",
   "memory:injection:preview",
+  "memory:scope:promote",
+  "memory:semantic:add",
+  "memory:semantic:delete",
+  "memory:semantic:distill",
+  "memory:semantic:list",
+  "memory:semantic:update",
   "memory:settings:get",
   "memory:settings:update",
+  "memory:trace:feedback",
+  "memory:trace:get",
+  "project:lifecycle:archive",
+  "project:lifecycle:get",
+  "project:lifecycle:purge",
+  "project:lifecycle:restore",
   "project:project:archive",
   "project:project:create",
+  "project:project:createaiassist",
   "project:project:delete",
   "project:project:duplicate",
   "project:project:getcurrent",
   "project:project:list",
   "project:project:rename",
   "project:project:setcurrent",
+  "project:project:stats",
+  "project:project:switch",
+  "project:project:update",
   "rag:context:retrieve",
   "search:fulltext:query",
   "search:semantic:query",
@@ -134,6 +200,18 @@ export const IPC_CHANNELS = [
 export type IpcChannel = (typeof IPC_CHANNELS)[number];
 
 export type IpcChannelSpec = {
+  "ai:chat:send": {
+    request: {
+      documentId?: string;
+      message: string;
+      projectId?: string;
+    };
+    response: {
+      accepted: true;
+      echoed: string;
+      messageId: string;
+    };
+  };
   "ai:models:list": {
     request: Record<string, never>;
     response: {
@@ -164,13 +242,44 @@ export type IpcChannelSpec = {
           | "UNSUPPORTED"
           | "IO_ERROR"
           | "DB_ERROR"
+          | "MEMORY_EPISODE_WRITE_FAILED"
+          | "MEMORY_CAPACITY_EXCEEDED"
+          | "MEMORY_DISTILL_LLM_UNAVAILABLE"
+          | "MEMORY_CONFIDENCE_OUT_OF_RANGE"
+          | "MEMORY_CLEAR_CONFIRM_REQUIRED"
+          | "MEMORY_TRACE_MISMATCH"
+          | "MEMORY_SCOPE_DENIED"
           | "MODEL_NOT_READY"
           | "ENCODING_FAILED"
           | "RATE_LIMITED"
           | "TIMEOUT"
           | "CANCELED"
           | "UPSTREAM_ERROR"
-          | "INTERNAL";
+          | "INTERNAL"
+          | "PROJECT_CAPACITY_EXCEEDED"
+          | "PROJECT_DELETE_REQUIRES_ARCHIVE"
+          | "PROJECT_METADATA_INVALID_ENUM"
+          | "PROJECT_PURGE_PERMISSION_DENIED"
+          | "PROJECT_LIFECYCLE_WRITE_FAILED"
+          | "PROJECT_IPC_SCHEMA_INVALID"
+          | "KG_ATTRIBUTE_KEYS_EXCEEDED"
+          | "KG_CAPACITY_EXCEEDED"
+          | "KG_ENTITY_CONFLICT"
+          | "KG_ENTITY_DUPLICATE"
+          | "KG_QUERY_TIMEOUT"
+          | "KG_RECOGNITION_UNAVAILABLE"
+          | "KG_RELEVANT_QUERY_FAILED"
+          | "KG_RELATION_INVALID"
+          | "KG_SCOPE_VIOLATION"
+          | "KG_SUBGRAPH_K_EXCEEDED"
+          | "PROJECT_SWITCH_TIMEOUT"
+          | "DOCUMENT_SAVE_CONFLICT"
+          | "MEMORY_BACKPRESSURE"
+          | "SKILL_TIMEOUT"
+          | "AI_PROVIDER_UNAVAILABLE"
+          | "VERSION_MERGE_TIMEOUT"
+          | "SEARCH_TIMEOUT"
+          | "CONTEXT_SCOPE_VIOLATION";
         message: string;
       };
       latencyMs: number;
@@ -459,6 +568,15 @@ export type IpcChannelSpec = {
       relativePath: string;
     };
   };
+  "export:project:bundle": {
+    request: {
+      projectId: string;
+    };
+    response: {
+      bytesWritten: number;
+      relativePath: string;
+    };
+  };
   "file:document:create": {
     request: {
       projectId: string;
@@ -611,13 +729,44 @@ export type IpcChannelSpec = {
                 | "UNSUPPORTED"
                 | "IO_ERROR"
                 | "DB_ERROR"
+                | "MEMORY_EPISODE_WRITE_FAILED"
+                | "MEMORY_CAPACITY_EXCEEDED"
+                | "MEMORY_DISTILL_LLM_UNAVAILABLE"
+                | "MEMORY_CONFIDENCE_OUT_OF_RANGE"
+                | "MEMORY_CLEAR_CONFIRM_REQUIRED"
+                | "MEMORY_TRACE_MISMATCH"
+                | "MEMORY_SCOPE_DENIED"
                 | "MODEL_NOT_READY"
                 | "ENCODING_FAILED"
                 | "RATE_LIMITED"
                 | "TIMEOUT"
                 | "CANCELED"
                 | "UPSTREAM_ERROR"
-                | "INTERNAL";
+                | "INTERNAL"
+                | "PROJECT_CAPACITY_EXCEEDED"
+                | "PROJECT_DELETE_REQUIRES_ARCHIVE"
+                | "PROJECT_METADATA_INVALID_ENUM"
+                | "PROJECT_PURGE_PERMISSION_DENIED"
+                | "PROJECT_LIFECYCLE_WRITE_FAILED"
+                | "PROJECT_IPC_SCHEMA_INVALID"
+                | "KG_ATTRIBUTE_KEYS_EXCEEDED"
+                | "KG_CAPACITY_EXCEEDED"
+                | "KG_ENTITY_CONFLICT"
+                | "KG_ENTITY_DUPLICATE"
+                | "KG_QUERY_TIMEOUT"
+                | "KG_RECOGNITION_UNAVAILABLE"
+                | "KG_RELEVANT_QUERY_FAILED"
+                | "KG_RELATION_INVALID"
+                | "KG_SCOPE_VIOLATION"
+                | "KG_SUBGRAPH_K_EXCEEDED"
+                | "PROJECT_SWITCH_TIMEOUT"
+                | "DOCUMENT_SAVE_CONFLICT"
+                | "MEMORY_BACKPRESSURE"
+                | "SKILL_TIMEOUT"
+                | "AI_PROVIDER_UNAVAILABLE"
+                | "VERSION_MERGE_TIMEOUT"
+                | "SEARCH_TIMEOUT"
+                | "CONTEXT_SCOPE_VIOLATION";
               message: string;
             };
             status: "error";
@@ -654,181 +803,541 @@ export type IpcChannelSpec = {
                 | "UNSUPPORTED"
                 | "IO_ERROR"
                 | "DB_ERROR"
+                | "MEMORY_EPISODE_WRITE_FAILED"
+                | "MEMORY_CAPACITY_EXCEEDED"
+                | "MEMORY_DISTILL_LLM_UNAVAILABLE"
+                | "MEMORY_CONFIDENCE_OUT_OF_RANGE"
+                | "MEMORY_CLEAR_CONFIRM_REQUIRED"
+                | "MEMORY_TRACE_MISMATCH"
+                | "MEMORY_SCOPE_DENIED"
                 | "MODEL_NOT_READY"
                 | "ENCODING_FAILED"
                 | "RATE_LIMITED"
                 | "TIMEOUT"
                 | "CANCELED"
                 | "UPSTREAM_ERROR"
-                | "INTERNAL";
+                | "INTERNAL"
+                | "PROJECT_CAPACITY_EXCEEDED"
+                | "PROJECT_DELETE_REQUIRES_ARCHIVE"
+                | "PROJECT_METADATA_INVALID_ENUM"
+                | "PROJECT_PURGE_PERMISSION_DENIED"
+                | "PROJECT_LIFECYCLE_WRITE_FAILED"
+                | "PROJECT_IPC_SCHEMA_INVALID"
+                | "KG_ATTRIBUTE_KEYS_EXCEEDED"
+                | "KG_CAPACITY_EXCEEDED"
+                | "KG_ENTITY_CONFLICT"
+                | "KG_ENTITY_DUPLICATE"
+                | "KG_QUERY_TIMEOUT"
+                | "KG_RECOGNITION_UNAVAILABLE"
+                | "KG_RELEVANT_QUERY_FAILED"
+                | "KG_RELATION_INVALID"
+                | "KG_SCOPE_VIOLATION"
+                | "KG_SUBGRAPH_K_EXCEEDED"
+                | "PROJECT_SWITCH_TIMEOUT"
+                | "DOCUMENT_SAVE_CONFLICT"
+                | "MEMORY_BACKPRESSURE"
+                | "SKILL_TIMEOUT"
+                | "AI_PROVIDER_UNAVAILABLE"
+                | "VERSION_MERGE_TIMEOUT"
+                | "SEARCH_TIMEOUT"
+                | "CONTEXT_SCOPE_VIOLATION";
               message: string;
             };
             status: "error";
           };
     };
   };
-  "kg:entity:create": {
+  "knowledge:entity:create": {
     request: {
+      attributes?: Record<string, string>;
       description?: string;
-      entityType?: string;
-      metadataJson?: string;
       name: string;
       projectId: string;
+      type: "character" | "location" | "event" | "item" | "faction";
     };
     response: {
-      createdAt: number;
-      description?: string;
-      entityId: string;
-      entityType?: string;
-      metadataJson: string;
+      attributes: Record<string, string>;
+      createdAt: string;
+      description: string;
+      id: string;
       name: string;
       projectId: string;
-      updatedAt: number;
+      type: "character" | "location" | "event" | "item" | "faction";
+      updatedAt: string;
+      version: number;
     };
   };
-  "kg:entity:delete": {
+  "knowledge:entity:delete": {
     request: {
-      entityId: string;
+      id: string;
+      projectId: string;
     };
     response: {
       deleted: true;
+      deletedRelationCount: number;
     };
   };
-  "kg:entity:list": {
+  "knowledge:entity:list": {
     request: {
       projectId: string;
     };
     response: {
       items: Array<{
-        createdAt: number;
-        description?: string;
-        entityId: string;
-        entityType?: string;
-        metadataJson: string;
+        attributes: Record<string, string>;
+        createdAt: string;
+        description: string;
+        id: string;
         name: string;
         projectId: string;
-        updatedAt: number;
+        type: "character" | "location" | "event" | "item" | "faction";
+        updatedAt: string;
+        version: number;
       }>;
     };
   };
-  "kg:entity:update": {
+  "knowledge:entity:read": {
     request: {
-      entityId: string;
+      id: string;
+      projectId: string;
+    };
+    response: {
+      attributes: Record<string, string>;
+      createdAt: string;
+      description: string;
+      id: string;
+      name: string;
+      projectId: string;
+      type: "character" | "location" | "event" | "item" | "faction";
+      updatedAt: string;
+      version: number;
+    };
+  };
+  "knowledge:entity:update": {
+    request: {
+      expectedVersion: number;
+      id: string;
       patch: {
+        attributes?: Record<string, string>;
         description?: string;
-        entityType?: string;
-        metadataJson?: string;
         name?: string;
+        type?: "character" | "location" | "event" | "item" | "faction";
       };
+      projectId: string;
     };
     response: {
-      createdAt: number;
-      description?: string;
-      entityId: string;
-      entityType?: string;
-      metadataJson: string;
+      attributes: Record<string, string>;
+      createdAt: string;
+      description: string;
+      id: string;
       name: string;
       projectId: string;
-      updatedAt: number;
+      type: "character" | "location" | "event" | "item" | "faction";
+      updatedAt: string;
+      version: number;
     };
   };
-  "kg:graph:get": {
+  "knowledge:query:byids": {
     request: {
+      entityIds: Array<string>;
       projectId: string;
-      purpose?: "ui" | "context";
     };
     response: {
-      entities: Array<{
-        createdAt: number;
-        description?: string;
-        entityId: string;
-        entityType?: string;
-        metadataJson: string;
+      items: Array<{
+        attributes: Record<string, string>;
+        createdAt: string;
+        description: string;
+        id: string;
         name: string;
         projectId: string;
-        updatedAt: number;
-      }>;
-      relations: Array<{
-        createdAt: number;
-        evidenceJson: string;
-        fromEntityId: string;
-        metadataJson: string;
-        projectId: string;
-        relationId: string;
-        relationType: string;
-        toEntityId: string;
-        updatedAt: number;
+        type: "character" | "location" | "event" | "item" | "faction";
+        updatedAt: string;
+        version: number;
       }>;
     };
   };
-  "kg:relation:create": {
+  "knowledge:query:path": {
     request: {
-      evidenceJson?: string;
-      fromEntityId: string;
-      metadataJson?: string;
       projectId: string;
-      relationType: string;
-      toEntityId: string;
+      sourceEntityId: string;
+      targetEntityId: string;
+      timeoutMs?: number;
     };
     response: {
-      createdAt: number;
-      evidenceJson: string;
-      fromEntityId: string;
-      metadataJson: string;
-      projectId: string;
-      relationId: string;
-      relationType: string;
-      toEntityId: string;
-      updatedAt: number;
+      degraded: boolean;
+      expansions: number;
+      pathEntityIds: Array<string>;
+      queryCostMs: number;
     };
   };
-  "kg:relation:delete": {
+  "knowledge:query:relevant": {
     request: {
-      relationId: string;
+      entityIds?: Array<string>;
+      excerpt: string;
+      maxEntities?: number;
+      projectId: string;
+    };
+    response: {
+      items: Array<{
+        attributes: Record<string, string>;
+        createdAt: string;
+        description: string;
+        id: string;
+        name: string;
+        projectId: string;
+        type: "character" | "location" | "event" | "item" | "faction";
+        updatedAt: string;
+        version: number;
+      }>;
+      queryCostMs: number;
+    };
+  };
+  "knowledge:query:subgraph": {
+    request: {
+      centerEntityId: string;
+      k: number;
+      projectId: string;
+    };
+    response: {
+      edgeCount: number;
+      entities: Array<{
+        attributes: Record<string, string>;
+        createdAt: string;
+        description: string;
+        id: string;
+        name: string;
+        projectId: string;
+        type: "character" | "location" | "event" | "item" | "faction";
+        updatedAt: string;
+        version: number;
+      }>;
+      nodeCount: number;
+      queryCostMs: number;
+      relations: Array<{
+        createdAt: string;
+        description: string;
+        id: string;
+        projectId: string;
+        relationType: string;
+        sourceEntityId: string;
+        targetEntityId: string;
+      }>;
+    };
+  };
+  "knowledge:query:validate": {
+    request: {
+      projectId: string;
+    };
+    response: {
+      cycles: Array<Array<string>>;
+      queryCostMs: number;
+    };
+  };
+  "knowledge:recognition:cancel": {
+    request: {
+      projectId: string;
+      sessionId: string;
+      taskId: string;
+    };
+    response: {
+      canceled: true;
+    };
+  };
+  "knowledge:recognition:enqueue": {
+    request: {
+      contentText: string;
+      documentId: string;
+      projectId: string;
+      sessionId: string;
+      traceId: string;
+    };
+    response: {
+      queuePosition: number;
+      status: "started" | "queued";
+      taskId: string;
+    };
+  };
+  "knowledge:recognition:stats": {
+    request: {
+      projectId: string;
+      sessionId: string;
+    };
+    response: {
+      canceledTaskIds: Array<string>;
+      completed: number;
+      completionOrder: Array<string>;
+      maxConcurrency: number;
+      peakRunning: number;
+      queued: number;
+      running: number;
+    };
+  };
+  "knowledge:relation:create": {
+    request: {
+      description?: string;
+      projectId: string;
+      relationType: string;
+      sourceEntityId: string;
+      targetEntityId: string;
+    };
+    response: {
+      createdAt: string;
+      description: string;
+      id: string;
+      projectId: string;
+      relationType: string;
+      sourceEntityId: string;
+      targetEntityId: string;
+    };
+  };
+  "knowledge:relation:delete": {
+    request: {
+      id: string;
+      projectId: string;
     };
     response: {
       deleted: true;
     };
   };
-  "kg:relation:list": {
+  "knowledge:relation:list": {
     request: {
       projectId: string;
     };
     response: {
       items: Array<{
-        createdAt: number;
-        evidenceJson: string;
-        fromEntityId: string;
-        metadataJson: string;
+        createdAt: string;
+        description: string;
+        id: string;
         projectId: string;
-        relationId: string;
         relationType: string;
-        toEntityId: string;
-        updatedAt: number;
+        sourceEntityId: string;
+        targetEntityId: string;
       }>;
     };
   };
-  "kg:relation:update": {
+  "knowledge:relation:update": {
     request: {
+      id: string;
       patch: {
-        evidenceJson?: string;
-        fromEntityId?: string;
-        metadataJson?: string;
+        description?: string;
         relationType?: string;
-        toEntityId?: string;
+        sourceEntityId?: string;
+        targetEntityId?: string;
       };
-      relationId: string;
+      projectId: string;
     };
     response: {
-      createdAt: number;
-      evidenceJson: string;
-      fromEntityId: string;
-      metadataJson: string;
+      createdAt: string;
+      description: string;
+      id: string;
       projectId: string;
-      relationId: string;
       relationType: string;
-      toEntityId: string;
-      updatedAt: number;
+      sourceEntityId: string;
+      targetEntityId: string;
+    };
+  };
+  "knowledge:rules:inject": {
+    request: {
+      documentId: string;
+      entityIds?: Array<string>;
+      excerpt: string;
+      maxEntities?: number;
+      projectId: string;
+      traceId: string;
+    };
+    response: {
+      injectedEntities: Array<{
+        attributes: Record<string, string>;
+        id: string;
+        name: string;
+        relationsSummary: Array<string>;
+        type: "character" | "location" | "event" | "item" | "faction";
+      }>;
+      source: "kg-rules-mock";
+    };
+  };
+  "knowledge:suggestion:accept": {
+    request: {
+      projectId: string;
+      sessionId: string;
+      suggestionId: string;
+    };
+    response: {
+      attributes: Record<string, string>;
+      createdAt: string;
+      description: string;
+      id: string;
+      name: string;
+      projectId: string;
+      type: "character" | "location" | "event" | "item" | "faction";
+      updatedAt: string;
+      version: number;
+    };
+  };
+  "knowledge:suggestion:dismiss": {
+    request: {
+      projectId: string;
+      sessionId: string;
+      suggestionId: string;
+    };
+    response: {
+      dismissed: true;
+    };
+  };
+  "memory:clear:all": {
+    request: {
+      confirmed: boolean;
+    };
+    response: {
+      deletedEpisodes: number;
+      deletedRules: number;
+      ok: true;
+    };
+  };
+  "memory:clear:project": {
+    request: {
+      confirmed: boolean;
+      projectId: string;
+    };
+    response: {
+      deletedEpisodes: number;
+      deletedRules: number;
+      ok: true;
+    };
+  };
+  "memory:distill:progress": {
+    request: {
+      errorCode?:
+        | "VALIDATION_ERROR"
+        | "IPC_TIMEOUT"
+        | "IPC_CHANNEL_FORBIDDEN"
+        | "IPC_PAYLOAD_TOO_LARGE"
+        | "IPC_SUBSCRIPTION_LIMIT_EXCEEDED"
+        | "INTERNAL_ERROR"
+        | "INVALID_ARGUMENT"
+        | "NOT_FOUND"
+        | "ALREADY_EXISTS"
+        | "CONFLICT"
+        | "PERMISSION_DENIED"
+        | "UNSUPPORTED"
+        | "IO_ERROR"
+        | "DB_ERROR"
+        | "MEMORY_EPISODE_WRITE_FAILED"
+        | "MEMORY_CAPACITY_EXCEEDED"
+        | "MEMORY_DISTILL_LLM_UNAVAILABLE"
+        | "MEMORY_CONFIDENCE_OUT_OF_RANGE"
+        | "MEMORY_CLEAR_CONFIRM_REQUIRED"
+        | "MEMORY_TRACE_MISMATCH"
+        | "MEMORY_SCOPE_DENIED"
+        | "MODEL_NOT_READY"
+        | "ENCODING_FAILED"
+        | "RATE_LIMITED"
+        | "TIMEOUT"
+        | "CANCELED"
+        | "UPSTREAM_ERROR"
+        | "INTERNAL"
+        | "PROJECT_CAPACITY_EXCEEDED"
+        | "PROJECT_DELETE_REQUIRES_ARCHIVE"
+        | "PROJECT_METADATA_INVALID_ENUM"
+        | "PROJECT_PURGE_PERMISSION_DENIED"
+        | "PROJECT_LIFECYCLE_WRITE_FAILED"
+        | "PROJECT_IPC_SCHEMA_INVALID"
+        | "KG_ATTRIBUTE_KEYS_EXCEEDED"
+        | "KG_CAPACITY_EXCEEDED"
+        | "KG_ENTITY_CONFLICT"
+        | "KG_ENTITY_DUPLICATE"
+        | "KG_QUERY_TIMEOUT"
+        | "KG_RECOGNITION_UNAVAILABLE"
+        | "KG_RELEVANT_QUERY_FAILED"
+        | "KG_RELATION_INVALID"
+        | "KG_SCOPE_VIOLATION"
+        | "KG_SUBGRAPH_K_EXCEEDED"
+        | "PROJECT_SWITCH_TIMEOUT"
+        | "DOCUMENT_SAVE_CONFLICT"
+        | "MEMORY_BACKPRESSURE"
+        | "SKILL_TIMEOUT"
+        | "AI_PROVIDER_UNAVAILABLE"
+        | "VERSION_MERGE_TIMEOUT"
+        | "SEARCH_TIMEOUT"
+        | "CONTEXT_SCOPE_VIOLATION";
+      message?: string;
+      progress: number;
+      projectId: string;
+      runId: string;
+      stage:
+        | "started"
+        | "clustered"
+        | "patterned"
+        | "generated"
+        | "completed"
+        | "failed";
+      trigger: "batch" | "idle" | "manual" | "conflict";
+    };
+    response: {
+      errorCode?:
+        | "VALIDATION_ERROR"
+        | "IPC_TIMEOUT"
+        | "IPC_CHANNEL_FORBIDDEN"
+        | "IPC_PAYLOAD_TOO_LARGE"
+        | "IPC_SUBSCRIPTION_LIMIT_EXCEEDED"
+        | "INTERNAL_ERROR"
+        | "INVALID_ARGUMENT"
+        | "NOT_FOUND"
+        | "ALREADY_EXISTS"
+        | "CONFLICT"
+        | "PERMISSION_DENIED"
+        | "UNSUPPORTED"
+        | "IO_ERROR"
+        | "DB_ERROR"
+        | "MEMORY_EPISODE_WRITE_FAILED"
+        | "MEMORY_CAPACITY_EXCEEDED"
+        | "MEMORY_DISTILL_LLM_UNAVAILABLE"
+        | "MEMORY_CONFIDENCE_OUT_OF_RANGE"
+        | "MEMORY_CLEAR_CONFIRM_REQUIRED"
+        | "MEMORY_TRACE_MISMATCH"
+        | "MEMORY_SCOPE_DENIED"
+        | "MODEL_NOT_READY"
+        | "ENCODING_FAILED"
+        | "RATE_LIMITED"
+        | "TIMEOUT"
+        | "CANCELED"
+        | "UPSTREAM_ERROR"
+        | "INTERNAL"
+        | "PROJECT_CAPACITY_EXCEEDED"
+        | "PROJECT_DELETE_REQUIRES_ARCHIVE"
+        | "PROJECT_METADATA_INVALID_ENUM"
+        | "PROJECT_PURGE_PERMISSION_DENIED"
+        | "PROJECT_LIFECYCLE_WRITE_FAILED"
+        | "PROJECT_IPC_SCHEMA_INVALID"
+        | "KG_ATTRIBUTE_KEYS_EXCEEDED"
+        | "KG_CAPACITY_EXCEEDED"
+        | "KG_ENTITY_CONFLICT"
+        | "KG_ENTITY_DUPLICATE"
+        | "KG_QUERY_TIMEOUT"
+        | "KG_RECOGNITION_UNAVAILABLE"
+        | "KG_RELEVANT_QUERY_FAILED"
+        | "KG_RELATION_INVALID"
+        | "KG_SCOPE_VIOLATION"
+        | "KG_SUBGRAPH_K_EXCEEDED"
+        | "PROJECT_SWITCH_TIMEOUT"
+        | "DOCUMENT_SAVE_CONFLICT"
+        | "MEMORY_BACKPRESSURE"
+        | "SKILL_TIMEOUT"
+        | "AI_PROVIDER_UNAVAILABLE"
+        | "VERSION_MERGE_TIMEOUT"
+        | "SEARCH_TIMEOUT"
+        | "CONTEXT_SCOPE_VIOLATION";
+      message?: string;
+      progress: number;
+      projectId: string;
+      runId: string;
+      stage:
+        | "started"
+        | "clustered"
+        | "patterned"
+        | "generated"
+        | "completed"
+        | "failed";
+      trigger: "batch" | "idle" | "manual" | "conflict";
     };
   };
   "memory:entry:create": {
@@ -908,6 +1417,91 @@ export type IpcChannelSpec = {
       updatedAt: number;
     };
   };
+  "memory:episode:query": {
+    request: {
+      limit?: number;
+      projectId: string;
+      queryText?: string;
+      sceneType: string;
+    };
+    response: {
+      fallbackRules: Array<string>;
+      items: Array<{
+        candidates: Array<string>;
+        chapterId: string;
+        compressed: boolean;
+        createdAt: number;
+        editDistance: number;
+        explicit?: string;
+        finalText: string;
+        id: string;
+        implicitSignal:
+          | "DIRECT_ACCEPT"
+          | "LIGHT_EDIT"
+          | "HEAVY_REWRITE"
+          | "FULL_REJECT"
+          | "UNDO_AFTER_ACCEPT"
+          | "REPEATED_SCENE_SKILL";
+        implicitWeight: number;
+        importance: number;
+        inputContext: string;
+        lastRecalledAt?: number;
+        projectId: string;
+        recallCount: number;
+        sceneType: string;
+        scope: "project";
+        selectedIndex: number;
+        skillUsed: string;
+        updatedAt: number;
+        userConfirmed: boolean;
+        version: 1;
+      }>;
+      memoryDegraded: boolean;
+      semanticRules: Array<{
+        confidence: number;
+        createdAt: number;
+        id: string;
+        projectId: string;
+        rule: string;
+        scope: "project" | "global";
+        updatedAt: number;
+        version: 1;
+      }>;
+    };
+  };
+  "memory:episode:record": {
+    request: {
+      acceptedWithoutEdit?: boolean;
+      candidates: Array<string>;
+      chapterId: string;
+      editDistance: number;
+      explicit?: string;
+      finalText: string;
+      importance?: number;
+      inputContext: string;
+      projectId: string;
+      repeatedSceneSkillCount?: number;
+      sceneType: string;
+      selectedIndex: number;
+      skillUsed: string;
+      targetEpisodeId?: string;
+      undoAfterAccept?: boolean;
+      userConfirmed?: boolean;
+    };
+    response: {
+      accepted: true;
+      episodeId: string;
+      implicitSignal:
+        | "DIRECT_ACCEPT"
+        | "LIGHT_EDIT"
+        | "HEAVY_REWRITE"
+        | "FULL_REJECT"
+        | "UNDO_AFTER_ACCEPT"
+        | "REPEATED_SCENE_SKILL";
+      implicitWeight: number;
+      retryCount: number;
+    };
+  };
   "memory:injection:preview": {
     request: {
       documentId?: string;
@@ -937,6 +1531,151 @@ export type IpcChannelSpec = {
       mode: "deterministic" | "semantic";
     };
   };
+  "memory:scope:promote": {
+    request: {
+      projectId: string;
+      ruleId: string;
+    };
+    response: {
+      item: {
+        category: "style" | "structure" | "character" | "pacing" | "vocabulary";
+        confidence: number;
+        conflictMarked?: boolean;
+        contradictingEpisodes: Array<string>;
+        createdAt: number;
+        id: string;
+        projectId: string;
+        recentlyUpdated?: boolean;
+        rule: string;
+        scope: "global" | "project";
+        supportingEpisodes: Array<string>;
+        updatedAt: number;
+        userConfirmed: boolean;
+        userModified: boolean;
+        version: 1;
+      };
+    };
+  };
+  "memory:semantic:add": {
+    request: {
+      category: "style" | "structure" | "character" | "pacing" | "vocabulary";
+      confidence: number;
+      contradictingEpisodes?: Array<string>;
+      projectId: string;
+      rule: string;
+      scope?: "global" | "project";
+      supportingEpisodes?: Array<string>;
+      userConfirmed?: boolean;
+      userModified?: boolean;
+    };
+    response: {
+      item: {
+        category: "style" | "structure" | "character" | "pacing" | "vocabulary";
+        confidence: number;
+        conflictMarked?: boolean;
+        contradictingEpisodes: Array<string>;
+        createdAt: number;
+        id: string;
+        projectId: string;
+        recentlyUpdated?: boolean;
+        rule: string;
+        scope: "global" | "project";
+        supportingEpisodes: Array<string>;
+        updatedAt: number;
+        userConfirmed: boolean;
+        userModified: boolean;
+        version: 1;
+      };
+    };
+  };
+  "memory:semantic:delete": {
+    request: {
+      projectId: string;
+      ruleId: string;
+    };
+    response: {
+      deleted: true;
+    };
+  };
+  "memory:semantic:distill": {
+    request: {
+      projectId: string;
+      trigger?: "batch" | "idle" | "manual" | "conflict";
+    };
+    response: {
+      accepted: true;
+      runId: string;
+    };
+  };
+  "memory:semantic:list": {
+    request: {
+      projectId: string;
+    };
+    response: {
+      conflictQueue: Array<{
+        id: string;
+        ruleIds: Array<string>;
+        status: "pending" | "resolved";
+      }>;
+      items: Array<{
+        category: "style" | "structure" | "character" | "pacing" | "vocabulary";
+        confidence: number;
+        conflictMarked?: boolean;
+        contradictingEpisodes: Array<string>;
+        createdAt: number;
+        id: string;
+        projectId: string;
+        recentlyUpdated?: boolean;
+        rule: string;
+        scope: "global" | "project";
+        supportingEpisodes: Array<string>;
+        updatedAt: number;
+        userConfirmed: boolean;
+        userModified: boolean;
+        version: 1;
+      }>;
+    };
+  };
+  "memory:semantic:update": {
+    request: {
+      patch: {
+        category?:
+          | "style"
+          | "structure"
+          | "character"
+          | "pacing"
+          | "vocabulary";
+        confidence?: number;
+        contradictingEpisodes?: Array<string>;
+        rule?: string;
+        scope?: "global" | "project";
+        supportingEpisodes?: Array<string>;
+        userConfirmed?: boolean;
+        userModified?: boolean;
+      };
+      projectId: string;
+      ruleId: string;
+    };
+    response: {
+      item: {
+        category: "style" | "structure" | "character" | "pacing" | "vocabulary";
+        confidence: number;
+        conflictMarked?: boolean;
+        contradictingEpisodes: Array<string>;
+        createdAt: number;
+        id: string;
+        projectId: string;
+        recentlyUpdated?: boolean;
+        rule: string;
+        scope: "global" | "project";
+        supportingEpisodes: Array<string>;
+        updatedAt: number;
+        userConfirmed: boolean;
+        userModified: boolean;
+        version: 1;
+      };
+    };
+  };
   "memory:settings:get": {
     request: Record<string, never>;
     response: {
@@ -962,6 +1701,83 @@ export type IpcChannelSpec = {
       privacyModeEnabled: boolean;
     };
   };
+  "memory:trace:feedback": {
+    request: {
+      generationId: string;
+      projectId: string;
+      reason?: string;
+      verdict: "correct" | "incorrect";
+    };
+    response: {
+      accepted: true;
+      feedbackId: string;
+    };
+  };
+  "memory:trace:get": {
+    request: {
+      generationId: string;
+      projectId: string;
+    };
+    response: {
+      trace: {
+        createdAt: number;
+        generationId: string;
+        influenceWeights: Array<{
+          memoryType: "working" | "episodic" | "semantic";
+          referenceId: string;
+          weight: number;
+        }>;
+        memoryReferences: {
+          episodic: Array<string>;
+          semantic: Array<string>;
+          working: Array<string>;
+        };
+        projectId: string;
+        updatedAt: number;
+      };
+    };
+  };
+  "project:lifecycle:archive": {
+    request: {
+      projectId: string;
+      traceId?: string;
+    };
+    response: {
+      archivedAt?: number;
+      projectId: string;
+      state: "active" | "archived" | "deleted";
+    };
+  };
+  "project:lifecycle:get": {
+    request: {
+      projectId: string;
+      traceId?: string;
+    };
+    response: {
+      projectId: string;
+      state: "active" | "archived" | "deleted";
+    };
+  };
+  "project:lifecycle:purge": {
+    request: {
+      projectId: string;
+      traceId?: string;
+    };
+    response: {
+      projectId: string;
+      state: "active" | "archived" | "deleted";
+    };
+  };
+  "project:lifecycle:restore": {
+    request: {
+      projectId: string;
+      traceId?: string;
+    };
+    response: {
+      projectId: string;
+      state: "active" | "archived" | "deleted";
+    };
+  };
   "project:project:archive": {
     request: {
       archived: boolean;
@@ -975,11 +1791,25 @@ export type IpcChannelSpec = {
   };
   "project:project:create": {
     request: {
+      description?: string;
       name?: string;
+      type?: "novel" | "screenplay" | "media";
     };
     response: {
       projectId: string;
       rootPath: string;
+    };
+  };
+  "project:project:createaiassist": {
+    request: {
+      prompt: string;
+    };
+    response: {
+      chapterOutlines: Array<string>;
+      characters: Array<string>;
+      description: string;
+      name: string;
+      type: "novel" | "screenplay" | "media";
     };
   };
   "project:project:delete": {
@@ -1017,6 +1847,8 @@ export type IpcChannelSpec = {
         name: string;
         projectId: string;
         rootPath: string;
+        stage?: "outline" | "draft" | "revision" | "final";
+        type?: "novel" | "screenplay" | "media";
         updatedAt: number;
       }>;
     };
@@ -1039,6 +1871,46 @@ export type IpcChannelSpec = {
     response: {
       projectId: string;
       rootPath: string;
+    };
+  };
+  "project:project:stats": {
+    request: Record<string, never>;
+    response: {
+      active: number;
+      archived: number;
+      total: number;
+    };
+  };
+  "project:project:switch": {
+    request: {
+      fromProjectId: string;
+      operatorId: string;
+      projectId: string;
+      traceId: string;
+    };
+    response: {
+      currentProjectId: string;
+      switchedAt: string;
+    };
+  };
+  "project:project:update": {
+    request: {
+      patch: {
+        defaultSkillSetId?: string;
+        description?: string;
+        knowledgeGraphId?: string;
+        languageStyle?: string;
+        narrativePerson?: string;
+        stage?: string;
+        targetAudience?: string;
+        targetChapterCount?: number;
+        targetWordCount?: number;
+        type?: string;
+      };
+      projectId: string;
+    };
+    response: {
+      updated: true;
     };
   };
   "rag:context:retrieve": {
@@ -1128,13 +2000,44 @@ export type IpcChannelSpec = {
           | "UNSUPPORTED"
           | "IO_ERROR"
           | "DB_ERROR"
+          | "MEMORY_EPISODE_WRITE_FAILED"
+          | "MEMORY_CAPACITY_EXCEEDED"
+          | "MEMORY_DISTILL_LLM_UNAVAILABLE"
+          | "MEMORY_CONFIDENCE_OUT_OF_RANGE"
+          | "MEMORY_CLEAR_CONFIRM_REQUIRED"
+          | "MEMORY_TRACE_MISMATCH"
+          | "MEMORY_SCOPE_DENIED"
           | "MODEL_NOT_READY"
           | "ENCODING_FAILED"
           | "RATE_LIMITED"
           | "TIMEOUT"
           | "CANCELED"
           | "UPSTREAM_ERROR"
-          | "INTERNAL";
+          | "INTERNAL"
+          | "PROJECT_CAPACITY_EXCEEDED"
+          | "PROJECT_DELETE_REQUIRES_ARCHIVE"
+          | "PROJECT_METADATA_INVALID_ENUM"
+          | "PROJECT_PURGE_PERMISSION_DENIED"
+          | "PROJECT_LIFECYCLE_WRITE_FAILED"
+          | "PROJECT_IPC_SCHEMA_INVALID"
+          | "KG_ATTRIBUTE_KEYS_EXCEEDED"
+          | "KG_CAPACITY_EXCEEDED"
+          | "KG_ENTITY_CONFLICT"
+          | "KG_ENTITY_DUPLICATE"
+          | "KG_QUERY_TIMEOUT"
+          | "KG_RECOGNITION_UNAVAILABLE"
+          | "KG_RELEVANT_QUERY_FAILED"
+          | "KG_RELATION_INVALID"
+          | "KG_SCOPE_VIOLATION"
+          | "KG_SUBGRAPH_K_EXCEEDED"
+          | "PROJECT_SWITCH_TIMEOUT"
+          | "DOCUMENT_SAVE_CONFLICT"
+          | "MEMORY_BACKPRESSURE"
+          | "SKILL_TIMEOUT"
+          | "AI_PROVIDER_UNAVAILABLE"
+          | "VERSION_MERGE_TIMEOUT"
+          | "SEARCH_TIMEOUT"
+          | "CONTEXT_SCOPE_VIOLATION";
         error_message?: string;
         id: string;
         name: string;
