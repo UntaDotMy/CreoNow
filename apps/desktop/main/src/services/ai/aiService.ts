@@ -60,6 +60,11 @@ type ProviderConfig = {
   timeoutMs: number;
 };
 
+type ProviderResolution = {
+  primary: ProviderConfig;
+  backup: ProviderConfig | null;
+};
+
 type ProviderMode = "openai-compatible" | "openai-byok" | "anthropic-byok";
 
 type ProviderCredentials = {
@@ -83,6 +88,20 @@ type ProxySettings = {
   anthropicByokApiKey?: string | null;
 };
 
+type ProviderHealthState = {
+  status: "healthy" | "degraded";
+  consecutiveFailures: number;
+  degradedAtMs: number | null;
+};
+
+type SessionQueueState = {
+  running: boolean;
+  pending: Array<{
+    traceId: string;
+    start: () => void;
+  }>;
+};
+
 type RunEntry = {
   executionId: string;
   runId: string;
@@ -102,6 +121,10 @@ type RunEntry = {
 const DEFAULT_TIMEOUT_MS = 10_000;
 const DEFAULT_LLM_RATE_LIMIT_PER_MINUTE = 60;
 const DEFAULT_RETRY_BACKOFF_MS = [1_000, 2_000, 4_000] as const;
+const PROVIDER_FAILURE_THRESHOLD = 3;
+const PROVIDER_HALF_OPEN_AFTER_MS = 15 * 60 * 1000;
+const DEFAULT_SESSION_TOKEN_BUDGET = 200_000;
+const DEFAULT_REQUEST_MAX_TOKENS_ESTIMATE = 256;
 
 /**
  * Narrow an unknown value to a JSON object.
@@ -160,6 +183,18 @@ function modeSystemHint(mode: "agent" | "plan" | "ask"): string | null {
     return "Mode: agent\nAct as an autonomous writing assistant and make concrete edits.";
   }
   return null;
+}
+
+/**
+ * Estimate token usage from UTF-8 byte length with deterministic approximation.
+ *
+ * Why: avoid provider-specific tokenizer drift while keeping quota accounting stable.
+ */
+function estimateTokenCount(text: string): number {
+  if (text.length === 0) {
+    return 0;
+  }
+  return Math.max(1, Math.ceil(Buffer.byteLength(text, "utf8") / 4));
 }
 
 /**
@@ -318,6 +353,130 @@ function resolveSettingsProviderCredentials(args: {
     mode: args.mode,
     credentials: openAiCompatible,
   };
+}
+
+/**
+ * Build a provider config from credential inputs.
+ */
+function buildProviderConfigFromCredentials(args: {
+  provider: AiProvider;
+  credentials: ProviderCredentials;
+  timeoutMs: number;
+  env: NodeJS.ProcessEnv;
+}): ProviderConfig | null {
+  const baseUrl =
+    typeof args.credentials.baseUrl === "string"
+      ? args.credentials.baseUrl.trim()
+      : "";
+  if (baseUrl.length === 0) {
+    return null;
+  }
+
+  const apiKey =
+    typeof args.credentials.apiKey === "string" &&
+    args.credentials.apiKey.trim().length > 0
+      ? args.credentials.apiKey
+      : undefined;
+
+  if (args.provider !== "proxy" && !isE2E(args.env) && !apiKey) {
+    return null;
+  }
+
+  return {
+    provider: args.provider,
+    baseUrl,
+    apiKey,
+    timeoutMs: args.timeoutMs,
+  };
+}
+
+/**
+ * Resolve a best-effort backup provider config from settings.
+ */
+function resolveSettingsBackupProvider(args: {
+  settings: ProxySettings;
+  primary: ProviderConfig;
+  timeoutMs: number;
+  env: NodeJS.ProcessEnv;
+}): ProviderConfig | null {
+  const openAiCompatible: ProviderCredentials = {
+    baseUrl:
+      args.settings.openAiCompatible?.baseUrl ??
+      args.settings.openAiCompatibleBaseUrl ??
+      args.settings.baseUrl ??
+      null,
+    apiKey:
+      args.settings.openAiCompatible?.apiKey ??
+      args.settings.openAiCompatibleApiKey ??
+      args.settings.apiKey ??
+      null,
+  };
+  const openAiByok: ProviderCredentials = {
+    baseUrl:
+      args.settings.openAiByok?.baseUrl ??
+      args.settings.openAiByokBaseUrl ??
+      args.settings.baseUrl ??
+      null,
+    apiKey:
+      args.settings.openAiByok?.apiKey ??
+      args.settings.openAiByokApiKey ??
+      args.settings.apiKey ??
+      null,
+  };
+  const anthropicByok: ProviderCredentials = {
+    baseUrl:
+      args.settings.anthropicByok?.baseUrl ??
+      args.settings.anthropicByokBaseUrl ??
+      args.settings.baseUrl ??
+      null,
+    apiKey:
+      args.settings.anthropicByok?.apiKey ??
+      args.settings.anthropicByokApiKey ??
+      args.settings.apiKey ??
+      null,
+  };
+
+  const candidates: ProviderConfig[] = [];
+
+  const pushCandidate = (
+    provider: AiProvider,
+    credentials: ProviderCredentials,
+  ) => {
+    const cfg = buildProviderConfigFromCredentials({
+      provider,
+      credentials,
+      timeoutMs: args.timeoutMs,
+      env: args.env,
+    });
+    if (!cfg) {
+      return;
+    }
+    if (
+      cfg.provider === args.primary.provider &&
+      cfg.baseUrl === args.primary.baseUrl &&
+      cfg.apiKey === args.primary.apiKey
+    ) {
+      return;
+    }
+    candidates.push(cfg);
+  };
+
+  if (args.primary.provider !== "anthropic") {
+    pushCandidate("anthropic", anthropicByok);
+  }
+  if (args.primary.provider !== "openai") {
+    pushCandidate("openai", openAiByok);
+  }
+
+  const mode = resolveSettingsProviderMode(args.settings);
+  if (
+    args.primary.provider !== "proxy" &&
+    (mode === "openai-compatible" || args.settings.enabled)
+  ) {
+    pushCandidate("proxy", openAiCompatible);
+  }
+
+  return candidates[0] ?? null;
 }
 
 /**
@@ -621,7 +780,7 @@ async function resolveProviderConfig(deps: {
   env: NodeJS.ProcessEnv;
   getFakeServer: () => Promise<FakeAiServer>;
   getProxySettings?: () => ProxySettings | null;
-}): Promise<ServiceResult<ProviderConfig>> {
+}): Promise<ServiceResult<ProviderResolution>> {
   const timeoutMs = parseTimeoutMs(deps.env);
 
   const proxyEnabled = deps.env.CREONOW_AI_PROXY_ENABLED === "1";
@@ -636,14 +795,17 @@ async function resolveProviderConfig(deps: {
     return {
       ok: true,
       data: {
-        provider: "proxy",
-        baseUrl,
-        apiKey:
-          typeof deps.env.CREONOW_AI_PROXY_API_KEY === "string" &&
-          deps.env.CREONOW_AI_PROXY_API_KEY.length > 0
-            ? deps.env.CREONOW_AI_PROXY_API_KEY
-            : undefined,
-        timeoutMs,
+        primary: {
+          provider: "proxy",
+          baseUrl,
+          apiKey:
+            typeof deps.env.CREONOW_AI_PROXY_API_KEY === "string" &&
+            deps.env.CREONOW_AI_PROXY_API_KEY.length > 0
+              ? deps.env.CREONOW_AI_PROXY_API_KEY
+              : undefined,
+          timeoutMs,
+        },
+        backup: null,
       },
     };
   }
@@ -657,31 +819,27 @@ async function resolveProviderConfig(deps: {
     });
 
     if (mode !== "openai-compatible" || proxyFromSettings.enabled) {
-      const baseUrl =
-        typeof resolved.credentials.baseUrl === "string"
-          ? resolved.credentials.baseUrl.trim()
-          : "";
-      if (baseUrl.length === 0) {
+      const primary = buildProviderConfigFromCredentials({
+        provider: resolved.provider,
+        credentials: resolved.credentials,
+        timeoutMs,
+        env: deps.env,
+      });
+      if (!primary) {
         return ipcError("AI_NOT_CONFIGURED", "请先在设置中配置 AI 服务");
       }
-
-      const apiKey =
-        typeof resolved.credentials.apiKey === "string" &&
-        resolved.credentials.apiKey.trim().length > 0
-          ? resolved.credentials.apiKey
-          : undefined;
-
-      if (resolved.provider !== "proxy" && !isE2E(deps.env) && !apiKey) {
-        return ipcError("AI_NOT_CONFIGURED", "请先在设置中配置 AI 服务");
-      }
+      const backup = resolveSettingsBackupProvider({
+        settings: proxyFromSettings,
+        primary,
+        timeoutMs,
+        env: deps.env,
+      });
 
       return {
         ok: true,
         data: {
-          provider: resolved.provider,
-          baseUrl,
-          apiKey,
-          timeoutMs,
+          primary,
+          backup,
         },
       };
     }
@@ -724,10 +882,13 @@ async function resolveProviderConfig(deps: {
   return {
     ok: true,
     data: {
-      provider,
-      baseUrl,
-      apiKey,
-      timeoutMs,
+      primary: {
+        provider,
+        baseUrl,
+        apiKey,
+        timeoutMs,
+      },
+      backup: null,
     },
   };
 }
@@ -745,9 +906,13 @@ export function createAiService(deps: {
   sleep?: (ms: number) => Promise<void>;
   rateLimitPerMinute?: number;
   retryBackoffMs?: readonly number[];
+  sessionTokenBudget?: number;
 }): AiService {
   const runs = new Map<string, RunEntry>();
   const requestTimestamps: number[] = [];
+  const providerHealthByKey = new Map<string, ProviderHealthState>();
+  const sessionTokenTotalsByKey = new Map<string, number>();
+  const sessionQueues = new Map<string, SessionQueueState>();
   const now = deps.now ?? (() => Date.now());
   const sleep =
     deps.sleep ??
@@ -758,6 +923,8 @@ export function createAiService(deps: {
   const rateLimitPerMinute =
     deps.rateLimitPerMinute ?? DEFAULT_LLM_RATE_LIMIT_PER_MINUTE;
   const retryBackoffMs = deps.retryBackoffMs ?? DEFAULT_RETRY_BACKOFF_MS;
+  const sessionTokenBudget =
+    deps.sessionTokenBudget ?? DEFAULT_SESSION_TOKEN_BUDGET;
   let fakeServerPromise: Promise<FakeAiServer> | null = null;
 
   const getFakeServer = async (): Promise<FakeAiServer> => {
@@ -769,6 +936,175 @@ export function createAiService(deps: {
     }
     return await fakeServerPromise;
   };
+
+  /**
+   * Build a stable session key used for queueing and token-budget accounting.
+   */
+  function resolveSessionKey(context?: {
+    projectId?: string;
+    documentId?: string;
+  }): string {
+    const projectId = context?.projectId?.trim() ?? "";
+    if (projectId.length > 0) {
+      return `project:${projectId}`;
+    }
+
+    const documentId = context?.documentId?.trim() ?? "";
+    if (documentId.length > 0) {
+      return `document:${documentId}`;
+    }
+
+    return "global";
+  }
+
+  function providerHealthKey(cfg: ProviderConfig): string {
+    return `${cfg.provider}:${cfg.baseUrl}`;
+  }
+
+  function getProviderHealthState(cfg: ProviderConfig): ProviderHealthState {
+    const key = providerHealthKey(cfg);
+    const existing = providerHealthByKey.get(key);
+    if (existing) {
+      return existing;
+    }
+
+    const initial: ProviderHealthState = {
+      status: "healthy",
+      consecutiveFailures: 0,
+      degradedAtMs: null,
+    };
+    providerHealthByKey.set(key, initial);
+    return initial;
+  }
+
+  function setProviderHealthState(
+    cfg: ProviderConfig,
+    state: ProviderHealthState,
+  ): void {
+    providerHealthByKey.set(providerHealthKey(cfg), state);
+  }
+
+  function markProviderFailure(args: {
+    cfg: ProviderConfig;
+    traceId: string;
+    reason: string;
+  }): ProviderHealthState {
+    const state = { ...getProviderHealthState(args.cfg) };
+    state.consecutiveFailures += 1;
+
+    if (state.consecutiveFailures >= PROVIDER_FAILURE_THRESHOLD) {
+      const wasDegraded = state.status === "degraded";
+      state.status = "degraded";
+      state.degradedAtMs = now();
+      if (!wasDegraded) {
+        deps.logger.info("ai_provider_degraded", {
+          traceId: args.traceId,
+          provider: args.cfg.provider,
+          baseUrl: args.cfg.baseUrl,
+          failures: state.consecutiveFailures,
+          reason: args.reason,
+        });
+      }
+    }
+
+    setProviderHealthState(args.cfg, state);
+    return state;
+  }
+
+  function markProviderSuccess(args: {
+    cfg: ProviderConfig;
+    traceId: string;
+    fromHalfOpen: boolean;
+  }): void {
+    const state = { ...getProviderHealthState(args.cfg) };
+    const wasDegraded = state.status === "degraded";
+    state.status = "healthy";
+    state.consecutiveFailures = 0;
+    state.degradedAtMs = null;
+    setProviderHealthState(args.cfg, state);
+
+    if (wasDegraded || args.fromHalfOpen) {
+      deps.logger.info("ai_provider_recovered", {
+        traceId: args.traceId,
+        provider: args.cfg.provider,
+        baseUrl: args.cfg.baseUrl,
+        fromHalfOpen: args.fromHalfOpen,
+      });
+    }
+  }
+
+  function isProviderAvailabilityError(error: IpcError): boolean {
+    return error.code === "LLM_API_ERROR" || error.code === "TIMEOUT";
+  }
+
+  function buildProviderUnavailableError(args: {
+    traceId: string;
+    primary: ProviderConfig;
+    backup: ProviderConfig | null;
+  }): Err {
+    return ipcError("AI_PROVIDER_UNAVAILABLE", "All AI providers unavailable", {
+      traceId: args.traceId,
+      primary: args.primary.provider,
+      backup: args.backup?.provider ?? null,
+    });
+  }
+
+  /**
+   * Enqueue a non-stream execution so same-session requests run one-by-one.
+   */
+  function enqueueSessionRun<T>(args: {
+    sessionKey: string;
+    traceId: string;
+    execute: () => Promise<T>;
+  }): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+      const state =
+        sessionQueues.get(args.sessionKey) ??
+        ({
+          running: false,
+          pending: [],
+        } satisfies SessionQueueState);
+      sessionQueues.set(args.sessionKey, state);
+
+      const start = () => {
+        state.running = true;
+        void args
+          .execute()
+          .then(resolve, reject)
+          .finally(() => {
+            const next = state.pending.shift();
+            if (next) {
+              deps.logger.info("ai_session_queue_dequeued", {
+                sessionKey: args.sessionKey,
+                traceId: next.traceId,
+                queueRemaining: state.pending.length,
+              });
+              next.start();
+              return;
+            }
+
+            state.running = false;
+            sessionQueues.delete(args.sessionKey);
+          });
+      };
+
+      if (!state.running) {
+        start();
+        return;
+      }
+
+      const queuePosition = state.pending.length + 1;
+      deps.logger.info("ai_session_queue_enqueued", {
+        sessionKey: args.sessionKey,
+        traceId: args.traceId,
+        queuePosition,
+      });
+      state.pending.push({
+        traceId: args.traceId,
+        start,
+      });
+    });
+  }
 
   /**
    * Consume one request budget token from the fixed 60s window limiter.
@@ -1342,6 +1678,137 @@ export function createAiService(deps: {
     return { ok: true, data: true };
   }
 
+  async function runNonStreamWithProvider(args: {
+    entry: RunEntry;
+    cfg: ProviderConfig;
+    systemPrompt?: string;
+    input: string;
+    mode: "agent" | "plan" | "ask";
+    model: string;
+    system?: string;
+  }): Promise<ServiceResult<string>> {
+    if (args.cfg.provider === "anthropic") {
+      return await runAnthropicNonStream(args);
+    }
+    return await runOpenAiNonStream(args);
+  }
+
+  async function runNonStreamWithFailover(args: {
+    entry: RunEntry;
+    primary: ProviderConfig;
+    backup: ProviderConfig | null;
+    systemPrompt?: string;
+    input: string;
+    mode: "agent" | "plan" | "ask";
+    model: string;
+    system?: string;
+  }): Promise<ServiceResult<string>> {
+    const primaryState = getProviderHealthState(args.primary);
+    const canHalfOpenProbe =
+      primaryState.status === "degraded" &&
+      primaryState.degradedAtMs !== null &&
+      now() - primaryState.degradedAtMs >= PROVIDER_HALF_OPEN_AFTER_MS;
+
+    if (
+      primaryState.status === "degraded" &&
+      !canHalfOpenProbe &&
+      args.backup !== null
+    ) {
+      deps.logger.info("ai_provider_failover", {
+        traceId: args.entry.traceId,
+        from: args.primary.provider,
+        to: args.backup.provider,
+        reason: "primary_degraded",
+      });
+      const backupRes = await runNonStreamWithProvider({
+        ...args,
+        cfg: args.backup,
+      });
+      if (backupRes.ok) {
+        return backupRes;
+      }
+      if (isProviderAvailabilityError(backupRes.error)) {
+        return buildProviderUnavailableError({
+          traceId: args.entry.traceId,
+          primary: args.primary,
+          backup: args.backup,
+        });
+      }
+      return backupRes;
+    }
+
+    if (canHalfOpenProbe) {
+      deps.logger.info("ai_provider_half_open_probe", {
+        traceId: args.entry.traceId,
+        provider: args.primary.provider,
+      });
+    }
+
+    const primaryRes = await runNonStreamWithProvider({
+      ...args,
+      cfg: args.primary,
+    });
+    if (primaryRes.ok) {
+      markProviderSuccess({
+        cfg: args.primary,
+        traceId: args.entry.traceId,
+        fromHalfOpen: canHalfOpenProbe,
+      });
+      return primaryRes;
+    }
+
+    if (!isProviderAvailabilityError(primaryRes.error)) {
+      return primaryRes;
+    }
+
+    const state = markProviderFailure({
+      cfg: args.primary,
+      traceId: args.entry.traceId,
+      reason: primaryRes.error.code,
+    });
+
+    if (state.status !== "degraded") {
+      if (args.backup !== null) {
+        return buildProviderUnavailableError({
+          traceId: args.entry.traceId,
+          primary: args.primary,
+          backup: args.backup,
+        });
+      }
+      return primaryRes;
+    }
+
+    if (args.backup === null) {
+      return primaryRes;
+    }
+
+    deps.logger.info("ai_provider_failover", {
+      traceId: args.entry.traceId,
+      from: args.primary.provider,
+      to: args.backup.provider,
+      reason: canHalfOpenProbe
+        ? "half_open_probe_failed"
+        : "primary_unavailable",
+    });
+
+    const backupRes = await runNonStreamWithProvider({
+      ...args,
+      cfg: args.backup,
+    });
+    if (backupRes.ok) {
+      return backupRes;
+    }
+    if (isProviderAvailabilityError(backupRes.error)) {
+      return buildProviderUnavailableError({
+        traceId: args.entry.traceId,
+        primary: args.primary,
+        backup: args.backup,
+      });
+    }
+
+    return backupRes;
+  }
+
   const runSkill: AiService["runSkill"] = async (args) => {
     const cfgRes = await resolveProviderConfig({
       logger: deps.logger,
@@ -1352,12 +1819,16 @@ export function createAiService(deps: {
     if (!cfgRes.ok) {
       return cfgRes;
     }
-    const cfg = cfgRes.data;
+    const primaryCfg = cfgRes.data.primary;
+    const backupCfg = cfgRes.data.backup;
 
     const runId = randomUUID();
     const executionId = runId;
     const traceId = randomUUID();
     const controller = new AbortController();
+    const sessionKey = resolveSessionKey(args.context);
+    const promptTokens = estimateTokenCount(args.input);
+    const projectedTokens = promptTokens + DEFAULT_REQUEST_MAX_TOKENS_ESTIMATE;
     const entry: RunEntry = {
       executionId,
       runId,
@@ -1379,9 +1850,27 @@ export function createAiService(deps: {
       runId,
       executionId,
       traceId,
-      provider: cfg.provider,
+      provider: primaryCfg.provider,
       stream: args.stream,
     });
+
+    const consumeSessionTokenBudget = (): Err | null => {
+      const currentTotal = sessionTokenTotalsByKey.get(sessionKey) ?? 0;
+      if (currentTotal + projectedTokens > sessionTokenBudget) {
+        return ipcError(
+          "AI_SESSION_TOKEN_BUDGET_EXCEEDED",
+          "AI session token budget exceeded",
+          {
+            traceId,
+            sessionKey,
+            sessionTokenBudget,
+            currentTotal,
+            projectedTokens,
+          },
+        );
+      }
+      return null;
+    };
 
     entry.timeoutTimer = setTimeout(() => {
       if (entry.terminal !== null) {
@@ -1396,18 +1885,30 @@ export function createAiService(deps: {
         logEvent: "ai_run_timeout",
         errorCode: "TIMEOUT",
       });
-    }, cfg.timeoutMs);
+    }, primaryCfg.timeoutMs);
 
     if (args.stream) {
+      const budgetExceeded = consumeSessionTokenBudget();
+      if (budgetExceeded) {
+        setTerminal({
+          entry,
+          terminal: "error",
+          error: budgetExceeded.error,
+          logEvent: "ai_run_failed",
+          errorCode: budgetExceeded.error.code,
+        });
+        return budgetExceeded;
+      }
+
       void (async () => {
         try {
           let replayAttempts = 0;
           for (;;) {
             const res =
-              cfg.provider === "anthropic"
+              primaryCfg.provider === "anthropic"
                 ? await runAnthropicStream({
                     entry,
-                    cfg,
+                    cfg: primaryCfg,
                     systemPrompt: args.systemPrompt,
                     input: args.input,
                     mode: args.mode,
@@ -1416,7 +1917,7 @@ export function createAiService(deps: {
                   })
                 : await runOpenAiStream({
                     entry,
-                    cfg,
+                    cfg: primaryCfg,
                     systemPrompt: args.systemPrompt,
                     input: args.input,
                     mode: args.mode,
@@ -1483,6 +1984,14 @@ export function createAiService(deps: {
             if (entry.terminal !== null) {
               return;
             }
+
+            const currentTotal = sessionTokenTotalsByKey.get(sessionKey) ?? 0;
+            const completionTokens = estimateTokenCount(entry.outputText);
+            sessionTokenTotalsByKey.set(
+              sessionKey,
+              currentTotal + promptTokens + completionTokens,
+            );
+
             setTerminal({
               entry,
               terminal: "completed",
@@ -1524,78 +2033,97 @@ export function createAiService(deps: {
       return { ok: true, data: { executionId, runId } };
     }
 
-    try {
-      const res =
-        cfg.provider === "anthropic"
-          ? await runAnthropicNonStream({
-              entry,
-              cfg,
-              systemPrompt: args.systemPrompt,
-              input: args.input,
-              mode: args.mode,
-              model: args.model,
-              system: args.system,
-            })
-          : await runOpenAiNonStream({
-              entry,
-              cfg,
-              systemPrompt: args.systemPrompt,
-              input: args.input,
-              mode: args.mode,
-              model: args.model,
-              system: args.system,
-            });
+    const executeNonStream = async (): Promise<
+      ServiceResult<{ executionId: string; runId: string; outputText?: string }>
+    > => {
+      try {
+        const budgetExceeded = consumeSessionTokenBudget();
+        if (budgetExceeded) {
+          setTerminal({
+            entry,
+            terminal: "error",
+            error: budgetExceeded.error,
+            logEvent: "ai_run_failed",
+            errorCode: budgetExceeded.error.code,
+          });
+          return budgetExceeded;
+        }
 
-      if (!res.ok) {
+        const currentTotal = sessionTokenTotalsByKey.get(sessionKey) ?? 0;
+        const res = await runNonStreamWithFailover({
+          entry,
+          primary: primaryCfg,
+          backup: backupCfg,
+          systemPrompt: args.systemPrompt,
+          input: args.input,
+          mode: args.mode,
+          model: args.model,
+          system: args.system,
+        });
+
+        if (!res.ok) {
+          setTerminal({
+            entry,
+            terminal: "error",
+            error: res.error,
+            logEvent: "ai_run_failed",
+            errorCode: res.error.code,
+          });
+          return { ok: false, error: res.error };
+        }
+
+        entry.outputText = res.data;
+        const completionTokens = estimateTokenCount(res.data);
+        sessionTokenTotalsByKey.set(
+          sessionKey,
+          currentTotal + promptTokens + completionTokens,
+        );
+
+        setTerminal({
+          entry,
+          terminal: "completed",
+          logEvent: "ai_run_completed",
+        });
+        return { ok: true, data: { executionId, runId, outputText: res.data } };
+      } catch (error) {
+        const aborted = controller.signal.aborted;
+        if (aborted) {
+          if (entry.terminal === "error") {
+            return ipcError("TIMEOUT", "AI request timed out");
+          }
+          setTerminal({
+            entry,
+            terminal: "cancelled",
+            logEvent: "ai_run_canceled",
+            errorCode: "CANCELED",
+          });
+          return ipcError("CANCELED", "AI request canceled");
+        }
+
         setTerminal({
           entry,
           terminal: "error",
-          error: res.error,
-          logEvent: "ai_run_failed",
-          errorCode: res.error.code,
-        });
-        return { ok: false, error: res.error };
-      }
-
-      entry.outputText = res.data;
-      setTerminal({
-        entry,
-        terminal: "completed",
-        logEvent: "ai_run_completed",
-      });
-      return { ok: true, data: { executionId, runId, outputText: res.data } };
-    } catch (error) {
-      const aborted = controller.signal.aborted;
-      if (aborted) {
-        if (entry.terminal === "error") {
-          return ipcError("TIMEOUT", "AI request timed out");
-        }
-        setTerminal({
-          entry,
-          terminal: "cancelled",
-          logEvent: "ai_run_canceled",
-          errorCode: "CANCELED",
-        });
-        return ipcError("CANCELED", "AI request canceled");
-      }
-
-      setTerminal({
-        entry,
-        terminal: "error",
-        error: {
-          code: "INTERNAL",
-          message: "AI request failed",
-          details: {
-            message: error instanceof Error ? error.message : String(error),
+          error: {
+            code: "INTERNAL",
+            message: "AI request failed",
+            details: {
+              message: error instanceof Error ? error.message : String(error),
+            },
           },
-        },
-        logEvent: "ai_run_failed",
-        errorCode: "INTERNAL",
-      });
-      return ipcError("INTERNAL", "AI request failed");
-    } finally {
-      cleanupRun(runId);
-    }
+          logEvent: "ai_run_failed",
+          errorCode: "INTERNAL",
+        });
+        return ipcError("INTERNAL", "AI request failed");
+      } finally {
+        cleanupRun(runId);
+      }
+    };
+
+    return await enqueueSessionRun({
+      sessionKey,
+      traceId,
+      execute: executeNonStream,
+    });
   };
 
   const listModels: AiService["listModels"] = async () => {
@@ -1609,7 +2137,7 @@ export function createAiService(deps: {
       return cfgRes;
     }
 
-    const cfg = cfgRes.data;
+    const cfg = cfgRes.data.primary;
     const provider = cfg.provider;
     const providerName = providerDisplayName(provider);
 
