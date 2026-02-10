@@ -124,6 +124,7 @@ type ChatClearResponse = {
 const AI_STREAM_RATE_LIMIT_PER_SECOND = 5_000;
 const AI_CANDIDATE_COUNT_MIN = 1;
 const AI_CANDIDATE_COUNT_MAX = 5;
+const AI_CHAT_MESSAGE_CAPACITY = 2_000;
 
 type ModelPricing = {
   promptPer1kTokens: number;
@@ -840,6 +841,15 @@ export function registerAiIpcHandlers(deps: {
 
       const timestamp = nowTs();
       const projectMessages = chatHistoryByProject.get(projectId.data) ?? [];
+      if (projectMessages.length >= AI_CHAT_MESSAGE_CAPACITY) {
+        return {
+          ok: false,
+          error: {
+            code: "CONFLICT",
+            message: "会话消息已达上限，请先归档旧会话后继续",
+          },
+        };
+      }
       const messageId = `chat-${timestamp}`;
       const nextMessage: ChatHistoryMessage = {
         messageId,
@@ -850,7 +860,7 @@ export function registerAiIpcHandlers(deps: {
         traceId: `trace-${messageId}`,
       };
       const nextMessages = [...projectMessages, nextMessage];
-      chatHistoryByProject.set(projectId.data, nextMessages.slice(-200));
+      chatHistoryByProject.set(projectId.data, nextMessages);
 
       return {
         ok: true,
