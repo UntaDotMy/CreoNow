@@ -3,7 +3,7 @@
 - Issue: #388
 - Issue URL: https://github.com/Leeky1017/CreoNow/issues/388
 - Branch: task/388-ai-service-p5-failover-quota-hardening
-- PR: (待回填)
+- PR: https://github.com/Leeky1017/CreoNow/pull/389
 - Scope: 交付 `openspec/changes/ai-service-p5-failover-quota-hardening` 全部任务（failover/half-open、预算与限流、全 provider 降级、trace 审计连续、并发与容量边界）并合并回控制面 `main`
 - Out of Scope: UI 重设计、新增 provider 类型、放宽既有阈值（`maxTokens<=4096`、session `200000`、`60 req/min`）
 
@@ -144,3 +144,23 @@
   - `[CROSS_MODULE_GATE] PASS`
   - `test:unit` 通过
   - `test:integration` 通过
+
+### 2026-02-10 14:28 +0800 提交与契约复验
+
+- Command:
+  - `git commit -m "feat: harden ai-service failover and quota guards (#388)"`
+  - `pnpm contract:check`
+- Exit code: `0` / `0`
+- Key output:
+  - 提交：`353d0449`
+  - `contract:check` 通过（`ipc-generated.ts` 已与契约定义一致）
+
+### 2026-02-10 14:29 +0800 推送与创建 PR
+
+- Command:
+  - `git push -u origin task/388-ai-service-p5-failover-quota-hardening`
+  - `gh pr create --base main --head task/388-ai-service-p5-failover-quota-hardening --title "Harden AI service failover and quota guards (#388)" --body "...Closes #388"`
+- Exit code: `0` / `0`
+- Key output:
+  - 分支已推送并跟踪远端
+  - PR 创建成功：`https://github.com/Leeky1017/CreoNow/pull/389`
