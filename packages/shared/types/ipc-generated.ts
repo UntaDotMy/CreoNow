@@ -13,6 +13,9 @@ export type IpcErrorCode =
   | "ALREADY_EXISTS"
   | "CANCELED"
   | "CONFLICT"
+  | "CONSTRAINT_CONFLICT"
+  | "CONSTRAINT_NOT_FOUND"
+  | "CONSTRAINT_VALIDATION_ERROR"
   | "CONTEXT_BUDGET_CONFLICT"
   | "CONTEXT_BUDGET_INVALID_MINIMUM"
   | "CONTEXT_BUDGET_INVALID_RATIO"
@@ -106,8 +109,12 @@ export const IPC_CHANNELS = [
   "ai:skill:feedback",
   "ai:skill:run",
   "app:system:ping",
+  "constraints:policy:create",
+  "constraints:policy:delete",
   "constraints:policy:get",
+  "constraints:policy:list",
   "constraints:policy:set",
+  "constraints:policy:update",
   "context:budget:get",
   "context:budget:update",
   "context:creonow:ensure",
@@ -332,6 +339,9 @@ export type IpcChannelSpec = {
           | "AI_PROVIDER_UNAVAILABLE"
           | "VERSION_MERGE_TIMEOUT"
           | "SEARCH_TIMEOUT"
+          | "CONSTRAINT_VALIDATION_ERROR"
+          | "CONSTRAINT_NOT_FOUND"
+          | "CONSTRAINT_CONFLICT"
           | "CONTEXT_SCOPE_VIOLATION"
           | "CONTEXT_BUDGET_INVALID_RATIO"
           | "CONTEXT_BUDGET_INVALID_MINIMUM"
@@ -439,6 +449,36 @@ export type IpcChannelSpec = {
     request: Record<string, never>;
     response: Record<string, never>;
   };
+  "constraints:policy:create": {
+    request: {
+      constraint: {
+        degradable?: boolean;
+        priority?: number;
+        source?: "user" | "kg";
+        text: string;
+      };
+      projectId: string;
+    };
+    response: {
+      constraint: {
+        degradable: boolean;
+        id: string;
+        priority: number;
+        source: "user" | "kg";
+        text: string;
+        updatedAt: string;
+      };
+    };
+  };
+  "constraints:policy:delete": {
+    request: {
+      constraintId: string;
+      projectId: string;
+    };
+    response: {
+      deletedConstraintId: string;
+    };
+  };
   "constraints:policy:get": {
     request: {
       projectId: string;
@@ -448,6 +488,21 @@ export type IpcChannelSpec = {
         items: Array<string>;
         version: 1;
       };
+    };
+  };
+  "constraints:policy:list": {
+    request: {
+      projectId: string;
+    };
+    response: {
+      constraints: Array<{
+        degradable: boolean;
+        id: string;
+        priority: number;
+        source: "user" | "kg";
+        text: string;
+        updatedAt: string;
+      }>;
     };
   };
   "constraints:policy:set": {
@@ -462,6 +517,27 @@ export type IpcChannelSpec = {
       constraints: {
         items: Array<string>;
         version: 1;
+      };
+    };
+  };
+  "constraints:policy:update": {
+    request: {
+      constraintId: string;
+      patch: {
+        degradable?: boolean;
+        priority?: number;
+        text?: string;
+      };
+      projectId: string;
+    };
+    response: {
+      constraint: {
+        degradable: boolean;
+        id: string;
+        priority: number;
+        source: "user" | "kg";
+        text: string;
+        updatedAt: string;
       };
     };
   };
@@ -1031,6 +1107,9 @@ export type IpcChannelSpec = {
                 | "AI_PROVIDER_UNAVAILABLE"
                 | "VERSION_MERGE_TIMEOUT"
                 | "SEARCH_TIMEOUT"
+                | "CONSTRAINT_VALIDATION_ERROR"
+                | "CONSTRAINT_NOT_FOUND"
+                | "CONSTRAINT_CONFLICT"
                 | "CONTEXT_SCOPE_VIOLATION"
                 | "CONTEXT_BUDGET_INVALID_RATIO"
                 | "CONTEXT_BUDGET_INVALID_MINIMUM"
@@ -1113,6 +1192,9 @@ export type IpcChannelSpec = {
                 | "AI_PROVIDER_UNAVAILABLE"
                 | "VERSION_MERGE_TIMEOUT"
                 | "SEARCH_TIMEOUT"
+                | "CONSTRAINT_VALIDATION_ERROR"
+                | "CONSTRAINT_NOT_FOUND"
+                | "CONSTRAINT_CONFLICT"
                 | "CONTEXT_SCOPE_VIOLATION"
                 | "CONTEXT_BUDGET_INVALID_RATIO"
                 | "CONTEXT_BUDGET_INVALID_MINIMUM"
@@ -1559,6 +1641,9 @@ export type IpcChannelSpec = {
         | "AI_PROVIDER_UNAVAILABLE"
         | "VERSION_MERGE_TIMEOUT"
         | "SEARCH_TIMEOUT"
+        | "CONSTRAINT_VALIDATION_ERROR"
+        | "CONSTRAINT_NOT_FOUND"
+        | "CONSTRAINT_CONFLICT"
         | "CONTEXT_SCOPE_VIOLATION"
         | "CONTEXT_BUDGET_INVALID_RATIO"
         | "CONTEXT_BUDGET_INVALID_MINIMUM"
@@ -1634,6 +1719,9 @@ export type IpcChannelSpec = {
         | "AI_PROVIDER_UNAVAILABLE"
         | "VERSION_MERGE_TIMEOUT"
         | "SEARCH_TIMEOUT"
+        | "CONSTRAINT_VALIDATION_ERROR"
+        | "CONSTRAINT_NOT_FOUND"
+        | "CONSTRAINT_CONFLICT"
         | "CONTEXT_SCOPE_VIOLATION"
         | "CONTEXT_BUDGET_INVALID_RATIO"
         | "CONTEXT_BUDGET_INVALID_MINIMUM"
@@ -2425,6 +2513,9 @@ export type IpcChannelSpec = {
           | "AI_PROVIDER_UNAVAILABLE"
           | "VERSION_MERGE_TIMEOUT"
           | "SEARCH_TIMEOUT"
+          | "CONSTRAINT_VALIDATION_ERROR"
+          | "CONSTRAINT_NOT_FOUND"
+          | "CONSTRAINT_CONFLICT"
           | "CONTEXT_SCOPE_VIOLATION"
           | "CONTEXT_BUDGET_INVALID_RATIO"
           | "CONTEXT_BUDGET_INVALID_MINIMUM"
