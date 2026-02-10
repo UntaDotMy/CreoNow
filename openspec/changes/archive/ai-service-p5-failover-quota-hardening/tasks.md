@@ -49,4 +49,4 @@
 
 - [x] 6.1 RUN_LOG 记录 Red/Green 证据（命令、输出、断言）
 - [x] 6.2 记录 依赖同步检查（Dependency Sync Check）（数据结构/IPC/错误码/阈值）= `NO_DRIFT`
-- [ ] 6.3 记录 NFR 场景验证证据（并发入队、消息容量上限）
+- [x] 6.3 记录 NFR 场景验证证据（并发入队、消息容量上限）：`skill-session-queue-limit.test.ts` 验证同会话单执行上限；`ai-chat-capacity-guard.test.ts` 验证消息容量超限阻断且不丢失历史
