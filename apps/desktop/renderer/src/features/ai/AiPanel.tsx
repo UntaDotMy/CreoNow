@@ -9,7 +9,11 @@ import { Button, Spinner, Text } from "../../components/primitives";
 
 import { useOpenSettings } from "../../components/layout/RightPanel";
 
-import { useAiStore, type AiStatus } from "../../stores/aiStore";
+import {
+  useAiStore,
+  type AiStatus,
+  type SelectionRef,
+} from "../../stores/aiStore";
 
 import { useEditorStore } from "../../stores/editorStore";
 
@@ -115,6 +119,13 @@ function formatTokenValue(value: number): string {
 
 function formatUsd(value: number): string {
   return `$${value.toFixed(4)}`;
+}
+
+function formatSelectionPreview(text: string, maxChars = 120): string {
+  if (text.length <= maxChars) {
+    return text;
+  }
+  return `${text.slice(0, maxChars)}...`;
 }
 
 type DbErrorDetails = {
@@ -411,6 +422,9 @@ export function AiPanel(): JSX.Element {
   const cancel = useAiStore((s) => s.cancel);
 
   const editor = useEditorStore((s) => s.editor);
+  const bootstrapStatus = useEditorStore((s) => s.bootstrapStatus);
+  const compareMode = useEditorStore((s) => s.compareMode);
+  const setCompareMode = useEditorStore((s) => s.setCompareMode);
 
   const projectId = useEditorStore((s) => s.projectId);
 
@@ -452,6 +466,10 @@ export function AiPanel(): JSX.Element {
     null,
   );
   const evaluatedRunIdRef = React.useRef<string | null>(null);
+  const pendingSelectionSnapshotRef = React.useRef<{
+    selectionRef: SelectionRef;
+    selectionText: string;
+  } | null>(null);
 
   const selectedCandidate =
     lastCandidates.find((item) => item.id === selectedCandidateId) ??
@@ -571,6 +589,32 @@ export function AiPanel(): JSX.Element {
   }, [refreshModels]);
 
   React.useEffect(() => {
+    if (!editor || bootstrapStatus !== "ready") {
+      return;
+    }
+
+    const onSelectionUpdate = (): void => {
+      const captured = captureSelectionRef(editor);
+      if (!captured.ok) {
+        return;
+      }
+      const normalized = captured.data.selectionText.trim();
+      if (normalized.length === 0) {
+        return;
+      }
+      setSelectionSnapshot({
+        selectionRef: captured.data.selectionRef,
+        selectionText: normalized,
+      });
+    };
+
+    editor.on("selectionUpdate", onSelectionUpdate);
+    return () => {
+      editor.off("selectionUpdate", onSelectionUpdate);
+    };
+  }, [bootstrapStatus, editor, setSelectionSnapshot]);
+
+  React.useEffect(() => {
     if (lastCandidates.length === 0) {
       if (selectedCandidateId !== null) {
         setSelectedCandidateId(null);
@@ -595,22 +639,34 @@ export function AiPanel(): JSX.Element {
       return;
     }
 
-    if (!selectionRef || selectionText.length === 0) {
+    const effectiveSelectionSnapshot =
+      selectionRef && selectionText.length > 0
+        ? { selectionRef, selectionText }
+        : pendingSelectionSnapshotRef.current;
+    if (
+      !effectiveSelectionSnapshot ||
+      effectiveSelectionSnapshot.selectionText.length === 0
+    ) {
       return;
     }
 
     setProposal({
       runId: activeRunId,
 
-      selectionRef,
+      selectionRef: effectiveSelectionSnapshot.selectionRef,
 
-      selectionText,
+      selectionText: effectiveSelectionSnapshot.selectionText,
 
       replacementText: activeOutputText,
     });
+    pendingSelectionSnapshotRef.current = null;
+    if (typeof setCompareMode === "function") {
+      setCompareMode(true, null);
+    }
   }, [
     activeOutputText,
     activeRunId,
+    setCompareMode,
 
     proposal,
 
@@ -699,43 +755,75 @@ export function AiPanel(): JSX.Element {
     skillIdOverride?: string;
   }): Promise<void> {
     const effectiveSkillId = args?.skillIdOverride ?? selectedSkillId;
-    const inputToSend = args?.inputOverride ?? input;
+    const inputToSend = (args?.inputOverride ?? input).trim();
     const allowEmptyInput = isContinueSkill(effectiveSkillId);
-    if (!allowEmptyInput && !inputToSend.trim()) return;
+
+    let selectionSnapshotForRun: {
+      selectionRef: SelectionRef;
+      selectionText: string;
+    } | null =
+      selectionRef && selectionText.trim().length > 0
+        ? {
+            selectionRef,
+            selectionText: selectionText.trim(),
+          }
+        : null;
+
+    let selectionContextText = selectionSnapshotForRun?.selectionText ?? "";
+
+    if (!selectionContextText && editor && bootstrapStatus === "ready") {
+      const captured = captureSelectionRef(editor);
+      if (captured.ok) {
+        const normalized = captured.data.selectionText.trim();
+        if (normalized.length > 0) {
+          selectionContextText = normalized;
+          selectionSnapshotForRun = {
+            selectionRef: captured.data.selectionRef,
+            selectionText: normalized,
+          };
+          setSelectionSnapshot({
+            selectionRef: captured.data.selectionRef,
+            selectionText: normalized,
+          });
+        }
+      }
+    }
+
+    const composedInput =
+      selectionContextText.length > 0
+        ? `Selection context:\n${selectionContextText}\n\n${inputToSend}`.trim()
+        : inputToSend;
+    if (!allowEmptyInput && composedInput.length === 0) return;
 
     setLastRequest(inputToSend);
     setJudgeResult(null);
     evaluatedRunIdRef.current = null;
 
+    if (typeof setCompareMode === "function") {
+      setCompareMode(false);
+    }
     setProposal(null);
     setInlineDiffConfirmOpen(false);
     setSelectedCandidateId(null);
 
     setError(null);
 
-    if (editor) {
-      const captured = captureSelectionRef(editor);
-
-      if (captured.ok) {
-        setSelectionSnapshot(captured.data);
-      } else {
-        setSelectionSnapshot(null);
-      }
-    } else {
+    pendingSelectionSnapshotRef.current = selectionSnapshotForRun;
+    try {
+      await run({
+        inputOverride: composedInput,
+        context: {
+          projectId: currentProject?.projectId ?? projectId ?? undefined,
+          documentId: documentId ?? undefined,
+        },
+        mode: selectedMode,
+        model: selectedModel,
+        candidateCount,
+        streamOverride: candidateCount > 1 ? false : undefined,
+      });
+    } finally {
       setSelectionSnapshot(null);
     }
-
-    await run({
-      inputOverride: inputToSend,
-      context: {
-        projectId: currentProject?.projectId ?? projectId ?? undefined,
-        documentId: documentId ?? undefined,
-      },
-      mode: selectedMode,
-      model: selectedModel,
-      candidateCount,
-      streamOverride: candidateCount > 1 ? false : undefined,
-    });
   }
 
   /**
@@ -744,6 +832,10 @@ export function AiPanel(): JSX.Element {
    * Why: reject must leave panel in a deterministic idle state for next run.
    */
   function onReject(): void {
+    pendingSelectionSnapshotRef.current = null;
+    if (typeof setCompareMode === "function") {
+      setCompareMode(false);
+    }
     setProposal(null);
     setInlineDiffConfirmOpen(false);
 
@@ -909,8 +1001,13 @@ export function AiPanel(): JSX.Element {
 
     setInput("");
 
+    if (typeof setCompareMode === "function") {
+      setCompareMode(false);
+    }
+    pendingSelectionSnapshotRef.current = null;
     setProposal(null);
     setInlineDiffConfirmOpen(false);
+    setSelectionSnapshot(null);
 
     setError(null);
 
@@ -918,6 +1015,11 @@ export function AiPanel(): JSX.Element {
   }
 
   const working = isRunning(status);
+  const hasSelectionReference =
+    !!selectionRef && selectionText.trim().length > 0;
+  const selectionPreview = hasSelectionReference
+    ? formatSelectionPreview(selectionText.trim())
+    : "";
 
   const skillsErrorConfig: AiErrorConfig | null = skillsLastError
     ? {
@@ -1319,7 +1421,9 @@ export function AiPanel(): JSX.Element {
               {/* Proposal Area (Diff + Apply/Reject) */}
               {proposal && (
                 <>
-                  <DiffView diffText={diffText} />
+                  {!compareMode ? (
+                    <DiffView diffText={diffText} testId="ai-panel-diff" />
+                  ) : null}
                   <div className="flex gap-2">
                     <Button
                       data-testid="ai-apply"
@@ -1365,6 +1469,35 @@ export function AiPanel(): JSX.Element {
             <div className="shrink-0 px-1.5 pb-1.5 pt-2 border-t border-[var(--color-separator)]">
               {/* Unified input wrapper */}
               <div className="relative border border-[var(--color-border-default)] rounded-[var(--radius-md)] bg-[var(--color-bg-base)] focus-within:border-[var(--color-border-focus)]">
+                {hasSelectionReference ? (
+                  <div
+                    data-testid="ai-selection-reference-card"
+                    className="mx-2 mt-2 mb-1 rounded-[var(--radius-sm)] border border-[var(--color-border-default)] bg-[var(--color-bg-raised)] px-2 py-1.5"
+                  >
+                    <div className="flex items-start gap-2">
+                      <div className="min-w-0 flex-1">
+                        <div className="text-[10px] uppercase tracking-wide text-[var(--color-fg-muted)]">
+                          Selection from editor
+                        </div>
+                        <div
+                          data-testid="ai-selection-reference-preview"
+                          className="text-[12px] text-[var(--color-fg-default)] whitespace-pre-wrap break-words"
+                        >
+                          {selectionPreview}
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        data-testid="ai-selection-reference-close"
+                        className="h-5 w-5 shrink-0 rounded text-[var(--color-fg-muted)] hover:text-[var(--color-fg-default)] hover:bg-[var(--color-bg-hover)]"
+                        onClick={() => setSelectionSnapshot(null)}
+                        title="Dismiss selection reference"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
                 <textarea
                   ref={textareaRef}
                   data-testid="ai-input"
