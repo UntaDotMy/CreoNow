@@ -1,39 +1,58 @@
 # Active Changes Execution Order
 
-更新时间：2026-02-12 21:53
+更新时间：2026-02-12 22:03
 
 适用范围：`openspec/changes/` 下所有非 `archive/`、非 `_template/` 的活跃 change。
 
 ## 执行策略
 
-- 当前活跃 change 数量为 **0**
-- 路线图已更新为 36-change × 6-Phase 计划（见 `docs/plans/audit-roadmap.md`）
-- 旧 Phase 1 的 4 个 change（#456-#459）已合并，对应目录已归档
-- 新 Phase 1 的 7 个 change 尚未创建 Issue
+- 当前活跃 change 数量为 **0**（Phase 1 尚未启动）。
+- 执行模式：**三泳道并行 + 泳道内串行**（Phase 1 启动后生效）。
+- 路线图：36-change × 6-Phase 计划（见 `docs/plans/audit-roadmap.md`）。
+- 变更泳道（Phase 1）：
+  - AI Service 泳道：`p1-identity-template → p1-assemble-prompt → p1-aistore-messages → p1-multiturn-assembly`
+  - Skill System 泳道：`p1-chat-skill`（独立）
+  - Workbench 泳道：`p1-apikey-storage → p1-ai-settings-ui`
 
-## 下一步
+## 执行顺序
 
-新 Phase 1 包含 7 个 change（见 `docs/plans/phase1-agent-instruction.md`）：
+### 阶段 A — 起步项并行
 
-| Change ID | 模块 | 上游依赖 | 预估 |
-|-----------|------|---------|------|
-| `p1-identity-template` | ai-service | 无 | 0.5d |
-| `p1-assemble-prompt` | ai-service | p1-identity-template | 1d |
-| `p1-chat-skill` | skill-system | 无 | 0.5d |
-| `p1-aistore-messages` | ai-service | p1-assemble-prompt | 0.5d |
-| `p1-multiturn-assembly` | ai-service | p1-aistore-messages | 1d |
-| `p1-apikey-storage` | workbench | 无 | 1d |
-| `p1-ai-settings-ui` | workbench | p1-apikey-storage | 1d |
+1. `p1-identity-template`（ai-service，无依赖）
+2. `p1-chat-skill`（skill-system，无依赖）
+3. `p1-apikey-storage`（workbench，无依赖）
 
-推荐并行路径：
+### 阶段 B — 中段推进
+
+4. `p1-assemble-prompt`（ai-service，依赖 `p1-identity-template`）
+5. `p1-ai-settings-ui`（workbench，依赖 `p1-apikey-storage`）
+
+### 阶段 C — 多轮对话
+
+6. `p1-aistore-messages`（ai-service，依赖 `p1-assemble-prompt`）
+7. `p1-multiturn-assembly`（ai-service，依赖 `p1-aistore-messages`）
+
+## 依赖关系总览
+
 ```
-路径 A: p1-identity-template → p1-assemble-prompt → p1-aistore-messages → p1-multiturn-assembly
-路径 B: p1-chat-skill （独立）
-路径 C: p1-apikey-storage → p1-ai-settings-ui
+AI Service 泳道:    p1-identity-template ──→ p1-assemble-prompt ──→ p1-aistore-messages ──→ p1-multiturn-assembly
+Skill System 泳道:  p1-chat-skill
+Workbench 泳道:     p1-apikey-storage ──→ p1-ai-settings-ui
 ```
+
+### 跨泳道依赖明细
+
+| 下游 change | 上游依赖（跨泳道） | 依赖内容 |
+|------------|-------------------|---------|
+| （Phase 1 无跨泳道依赖） | — | — |
+
+## 依赖说明
+
+- 所有存在上游依赖的 change，在进入 Red 前必须完成并落盘 Dependency Sync Check（至少核对数据结构、IPC 契约、错误码、阈值）。
+- 若任一 change 发现 `DRIFT`，必须先更新该 change 的 `proposal.md`、`specs/*`、`tasks.md`，再推进 Red/Green。
 
 ## 维护规则
 
-- 当活跃 change 数量达到 2 个及以上时，必须维护本文件
-- 未同步本文件时，不得宣称执行顺序已确认
-- 任一 change 状态变更时必须同步更新本文件
+- 任一活跃 change 的范围、依赖、状态发生变化时，必须同步更新本文件。
+- 活跃 change 数量或拓扑变化时，必须更新执行模式、阶段顺序与更新时间。
+- 未同步本文件时，不得宣称执行顺序已确认。
