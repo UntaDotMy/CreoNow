@@ -126,14 +126,29 @@
 
 NFR 验收阈值落地：
 
-| 指标               | Spec 要求          | 验证方式                      |
-| ------------------ | ------------------ | ----------------------------- |
-| 布局初始化 TTI     | p95 < 1.2s         | Playwright + `performance.now()` |
-| 侧栏展开/折叠     | p95 < 220ms        | Playwright 动画帧测量         |
-| 命令面板唤起       | p95 < 120ms        | Playwright                    |
-| 命令面板检索       | p95 < 200ms        | 单元测试 + 计时               |
-| 最近项目列表上限   | 200                | 单元测试                      |
-| 命令面板单次返回   | 300（分页）        | 单元测试                      |
+| 指标             | Spec 要求   | 验证方式                         |
+| ---------------- | ----------- | -------------------------------- |
+| 布局初始化 TTI   | p95 < 1.2s  | Playwright + `performance.now()` |
+| 侧栏展开/折叠    | p95 < 220ms | Playwright 动画帧测量            |
+| 命令面板唤起     | p95 < 120ms | Playwright                       |
+| 命令面板检索     | p95 < 200ms | 单元测试 + 计时                  |
+| 最近项目列表上限 | 200         | 单元测试                         |
+| 命令面板单次返回 | 300（分页） | 单元测试                         |
+
+---
+
+### Requirement: 命令面板输入校验 [ADDED]
+
+- `CommandPalette` 接收的 `commands` 列表**必须**经 zod schema 校验 [ADDED]
+- `commandItemSchema`: `z.object({ id: z.string().min(1), label: z.string().min(1), group: z.string().optional(), category: z.enum(["recent","file","command"]).optional(), shortcut: z.string().optional(), subtext: z.string().optional() })`
+- 校验失败的 command item **必须**被静默过滤，不影响其余合法项
+
+#### Scenario: commandPalette zod 输入校验 [ADDED]
+
+- **假设** 外部传入一组 command items，其中部分 id 或 label 为空
+- **当** CommandPalette 渲染
+- **则** 非法项被过滤，仅合法项展示
+- **并且** 默认命令列表全部通过校验
 
 ---
 
