@@ -4,10 +4,8 @@
 
 | 角色 | 模型 | 职责 | 禁止 |
 |------|------|------|------|
-| **规划 Agent（你）** | Opus | 编写 change 文档（proposal.md + tasks.md） | 禁止写任何代码 |
-| **实现 Agent** | Codex | 按 change 文档执行 TDD 实现 | 禁止修改 spec/proposal |
-
-你的唯一交付物是 **6 组 change 文档**，不涉及任何代码实现。
+| **规划 Agent（你）** | Opus | 编写完整 change 文档（proposal.md + specs/*-delta.md + tasks.md 全部六段） | 禁止写任何代码 |
+| **实现 Agent** | Codex | 按 tasks.md 逐步执行 TDD 实现，填入实际命令输出和 PR 链接 | 禁止修改 spec/proposal |
 
 ## 必读文件
 
@@ -127,16 +125,25 @@ openspec/changes/<change-id>/
 | S1          | xxx.test.ts | should xxx | expect(xxx).toBe(xxx) |
 
 ## 3. Red（先写失败测试）
-<!-- Codex 填写 -->
+- [ ] 3.1 创建测试文件 `<test-file-path>`
+- [ ] 3.2 编写 S1 测试 `<test case name>` — 断言：<具体 expect>
+- [ ] 3.N 编写 SN 测试...
+- [ ] 3.X 运行测试确认全部 FAIL（模块/函数不存在）
+Red 失败证据要求：记录 `Error: Cannot find module` 或断言失败输出
 
 ## 4. Green（最小实现通过）
-<!-- Codex 填写 -->
+- [ ] 4.1 创建/修改 `<implementation-file-path>`
+- [ ] 4.2 实现 <函数/类/migration>，满足 S1-SN
+- [ ] 4.N 运行测试确认全部 PASS
 
 ## 5. Refactor（保持绿灯）
-<!-- Codex 填写 -->
+- [ ] 5.1 <具体重构动作>
+- [ ] 5.2 运行测试确认仍全部 PASS
 
 ## 6. Evidence
-<!-- Codex 填写 -->
+- 测试命令：`<pnpm vitest run ...>`
+- 测试结果：N tests passed, exit code 0
+- PR: <Codex 回填实际 PR 链接>
 ```
 
 ## C8-C13 内容与三层文件的映射
@@ -248,6 +255,51 @@ THEN 返回 { ok: false, error: { code: "VALIDATION_ERROR" } }
 
 **验证命令**: `pnpm vitest run apps/desktop/main/src/services/kg/__tests__/kgService.contextLevel.test.ts`
 
+### Tasks（写入 `tasks.md`）
+
+#### 1. Specification
+- [ ] 1.1 审阅 `openspec/specs/knowledge-graph/spec.md` §实体管理，确认 `KnowledgeEntity` 当前字段列表
+- [ ] 1.2 审阅 `kgService.ts` L47-57 的 `KnowledgeEntity` 类型定义，确认无 `aiContextLevel` 字段
+- [ ] 1.3 确认 Zod schema 需同步新增 `aiContextLevel` 枚举校验
+- [ ] 1.4 Dependency Sync Check: N/A（无上游依赖）
+
+#### 2. TDD Mapping
+| Scenario ID | 测试文件 | 测试用例名 | 断言要点 |
+|---|---|---|---|
+| S1 | `kgService.contextLevel.test.ts` | `should default aiContextLevel to when_detected` | `entity.aiContextLevel === "when_detected"` |
+| S2 | `kgService.contextLevel.test.ts` | `should update aiContextLevel to always` | `updated.aiContextLevel === "always"` |
+| S3 | `kgService.contextLevel.test.ts` | `should filter entities by aiContextLevel` | `result.length === 1 && result[0].name === "A"` |
+| S4 | `kgService.contextLevel.test.ts` | `should reject invalid aiContextLevel` | `result.ok === false && error.code === "VALIDATION_ERROR"` |
+
+#### 3. Red（先写失败测试）
+- [ ] 3.1 创建 `apps/desktop/main/src/services/kg/__tests__/kgService.contextLevel.test.ts`
+- [ ] 3.2 编写 S1 测试 `should default aiContextLevel to when_detected` — `expect(entity.aiContextLevel).toBe("when_detected")`
+- [ ] 3.3 编写 S2 测试 `should update aiContextLevel to always` — `expect(updated.aiContextLevel).toBe("always")`
+- [ ] 3.4 编写 S3 测试 `should filter entities by aiContextLevel` — `expect(result).toHaveLength(1)`
+- [ ] 3.5 编写 S4 测试 `should reject invalid aiContextLevel` — `expect(result.ok).toBe(false)`
+- [ ] 3.6 运行测试确认全部 FAIL（`aiContextLevel` 属性不存在）
+Red 失败证据要求：记录 `TypeError` 或属性 undefined 错误
+
+#### 4. Green（最小实现通过）
+- [ ] 4.1 在 `kgService.ts` 的 `KnowledgeEntity` 类型中添加 `aiContextLevel: AiContextLevel` 字段
+- [ ] 4.2 定义 `AiContextLevel = "always" | "when_detected" | "manual_only" | "never"` 类型和 Zod enum
+- [ ] 4.3 修改 `entityCreate` 方法：不传 `aiContextLevel` 时默认 `"when_detected"`
+- [ ] 4.4 修改 `entityUpdate` 方法：支持 patch `aiContextLevel`
+- [ ] 4.5 修改 `entityList` 方法：支持 `filter.aiContextLevel` 参数，生成 `WHERE ai_context_level = ?` SQL
+- [ ] 4.6 添加 SQLite migration：`ALTER TABLE knowledge_entities ADD COLUMN ai_context_level TEXT NOT NULL DEFAULT 'when_detected'`
+- [ ] 4.7 修改行映射函数 `rowToEntity`：从数据库行读取 `ai_context_level` 映射到 `aiContextLevel`
+- [ ] 4.8 运行测试确认全部 PASS
+
+#### 5. Refactor（保持绿灯）
+- [ ] 5.1 确认 `AiContextLevel` 类型和 `AI_CONTEXT_LEVELS` 常量从 `kgService.ts` 正确导出
+- [ ] 5.2 确认 Zod schema 的枚举值与类型定义一致
+- [ ] 5.3 运行测试确认仍全部 PASS
+
+#### 6. Evidence
+- 测试命令：`pnpm vitest run apps/desktop/main/src/services/kg/__tests__/kgService.contextLevel.test.ts`
+- 测试结果：4 tests passed, exit code 0
+- PR: <Codex 回填>
+
 ---
 
 ## C9: `p2-kg-aliases`（0.5d）
@@ -314,6 +366,52 @@ THEN 返回的实体 aliases === ["小默"]（空白字符串被过滤）
 ```
 
 **验证命令**: `pnpm vitest run apps/desktop/main/src/services/kg/__tests__/kgService.aliases.test.ts`
+
+### Tasks（写入 `tasks.md`）
+
+#### 1. Specification
+- [ ] 1.1 审阅 `openspec/specs/knowledge-graph/spec.md` §实体管理，确认当前无 `aliases` 字段
+- [ ] 1.2 审阅 `kgService.ts` L47-57 确认 `KnowledgeEntity` 类型
+- [ ] 1.3 确认 SQLite JSON 存储策略：列类型 TEXT，读取时 `JSON.parse`，写入时 `JSON.stringify`
+- [ ] 1.4 Dependency Sync Check: N/A（无上游依赖）
+
+#### 2. TDD Mapping
+| Scenario ID | 测试文件 | 测试用例名 | 断言要点 |
+|---|---|---|---|
+| S1 | `kgService.aliases.test.ts` | `should default aliases to empty array` | `Array.isArray(entity.aliases) && entity.aliases.length === 0` |
+| S2 | `kgService.aliases.test.ts` | `should store aliases when specified` | `entity.aliases deep equals ["小默", "默哥"]` |
+| S3 | `kgService.aliases.test.ts` | `should update aliases` | `updated.aliases deep equals ["小默", "默哥", "林侦探"]` |
+| S4 | `kgService.aliases.test.ts` | `should reject non-array aliases` | `result.ok === false` |
+| S5 | `kgService.aliases.test.ts` | `should filter empty strings from aliases` | `entity.aliases deep equals ["小默"]` |
+
+#### 3. Red（先写失败测试）
+- [ ] 3.1 创建 `apps/desktop/main/src/services/kg/__tests__/kgService.aliases.test.ts`
+- [ ] 3.2 编写 S1 测试 `should default aliases to empty array` — `expect(entity.aliases).toEqual([])`
+- [ ] 3.3 编写 S2 测试 `should store aliases when specified` — `expect(entity.aliases).toEqual(["小默", "默哥"])`
+- [ ] 3.4 编写 S3 测试 `should update aliases` — `expect(updated.aliases).toEqual(["小默", "默哥", "林侦探"])`
+- [ ] 3.5 编写 S4 测试 `should reject non-array aliases` — `expect(result.ok).toBe(false)`
+- [ ] 3.6 编写 S5 测试 `should filter empty strings from aliases` — `expect(entity.aliases).toEqual(["小默"])`
+- [ ] 3.7 运行测试确认全部 FAIL（`aliases` 属性不存在）
+Red 失败证据要求：记录属性 undefined 或 JSON parse 错误
+
+#### 4. Green（最小实现通过）
+- [ ] 4.1 在 `kgService.ts` 的 `KnowledgeEntity` 类型中添加 `aliases: string[]`
+- [ ] 4.2 添加 Zod schema：`z.array(z.string())` + 预处理 `.transform(arr => arr.filter(s => s.trim() !== ""))`
+- [ ] 4.3 修改 `entityCreate`：不传 `aliases` 时默认 `[]`；传入时过滤空白项后 `JSON.stringify` 存储
+- [ ] 4.4 修改 `entityUpdate`：支持 patch `aliases`
+- [ ] 4.5 修改 `rowToEntity`：从数据库行 `JSON.parse(row.aliases)` 映射到 `string[]`
+- [ ] 4.6 添加 SQLite migration：`ALTER TABLE knowledge_entities ADD COLUMN aliases TEXT NOT NULL DEFAULT '[]'`
+- [ ] 4.7 运行测试确认全部 PASS
+
+#### 5. Refactor（保持绿灯）
+- [ ] 5.1 确认 `aliases` JSON 存储/读取的 parse 错误有 try-catch 保护（损坏数据回退空数组）
+- [ ] 5.2 确认空白过滤逻辑在 Zod transform 中统一处理
+- [ ] 5.3 运行测试确认仍全部 PASS
+
+#### 6. Evidence
+- 测试命令：`pnpm vitest run apps/desktop/main/src/services/kg/__tests__/kgService.aliases.test.ts`
+- 测试结果：5 tests passed, exit code 0
+- PR: <Codex 回填>
 
 ---
 
@@ -426,6 +524,56 @@ THEN 执行时间 < 10ms
 
 **验证命令**: `pnpm vitest run apps/desktop/main/src/services/kg/__tests__/entityMatcher.test.ts`
 
+### Tasks（写入 `tasks.md`）
+
+#### 1. Specification
+- [ ] 1.1 审阅 C8 delta spec 确认 `AiContextLevel` 类型定义
+- [ ] 1.2 审阅 C9 delta spec 确认 `aliases: string[]` 字段定义
+- [ ] 1.3 确认 `kgRecognitionRuntime.ts` 为当前 mock 实现，将被替换
+- [ ] 1.4 Dependency Sync Check: 核对 C8 `AiContextLevel` 和 C9 `aliases` 字段 → `NO_DRIFT`
+
+#### 2. TDD Mapping
+| Scenario ID | 测试文件 | 测试用例名 | 断言要点 |
+|---|---|---|---|
+| S1 | `entityMatcher.test.ts` | `should match entities by name` | `results.length === 2`，包含 e1 和 e2 |
+| S2 | `entityMatcher.test.ts` | `should match entities by alias` | `result[0].matchedTerm === "小默"` |
+| S3 | `entityMatcher.test.ts` | `should skip non-when_detected entities` | `results.length === 0` |
+| S4 | `entityMatcher.test.ts` | `should deduplicate by entityId` | `results.length === 1` |
+| S5 | `entityMatcher.test.ts` | `should return empty for empty text` | `results.length === 0` |
+| S6 | `entityMatcher.test.ts` | `should complete within 10ms for 100 entities` | `elapsed < 10` |
+
+#### 3. Red（先写失败测试）
+- [ ] 3.1 创建 `apps/desktop/main/src/services/kg/__tests__/entityMatcher.test.ts`
+- [ ] 3.2 编写 S1 测试 `should match entities by name` — 构造 2 个 when_detected 实体，text 包含两个名字，`expect(results).toHaveLength(2)`
+- [ ] 3.3 编写 S2 测试 `should match entities by alias` — 实体 name 不在 text 中但 alias 在，`expect(results[0].matchedTerm).toBe("小默")`
+- [ ] 3.4 编写 S3 测试 `should skip non-when_detected entities` — 3 个实体分别为 always/never/manual_only，`expect(results).toHaveLength(0)`
+- [ ] 3.5 编写 S4 测试 `should deduplicate by entityId` — 实体 name 和 alias 都出现在 text 中，`expect(results).toHaveLength(1)`
+- [ ] 3.6 编写 S5 测试 `should return empty for empty text` — `expect(matchEntities("", entities)).toEqual([])`
+- [ ] 3.7 编写 S6 测试 `should complete within 10ms for 100 entities` — 生成 100 实体 × 1000 字，`expect(elapsed).toBeLessThan(10)`
+- [ ] 3.8 运行测试确认全部 FAIL（`matchEntities` 函数不存在）
+Red 失败证据要求：`Error: Cannot find module` 或 `matchEntities is not a function`
+
+#### 4. Green（最小实现通过）
+- [ ] 4.1 创建 `apps/desktop/main/src/services/kg/entityMatcher.ts`
+- [ ] 4.2 导出 `MatchableEntity` 和 `MatchResult` 类型
+- [ ] 4.3 实现 `matchEntities(text, entities)` 函数：
+    - 过滤 `aiContextLevel !== "when_detected"` 的实体
+    - 对每个实体，检查 `text.includes(name)` 和遍历 aliases 检查 `text.includes(alias)`
+    - 找到第一个匹配的 term 记录 position（`text.indexOf(term)`）
+    - 按 `entityId` 去重（`Map<string, MatchResult>`）
+    - 返回 `MatchResult[]`
+- [ ] 4.4 运行测试确认全部 PASS
+
+#### 5. Refactor（保持绿灯）
+- [ ] 5.1 评估是否需要 Aho-Corasick 优化（当前朴素扫描对 100 实体足够，暂不优化）
+- [ ] 5.2 确认函数为纯函数，无副作用，无 IO
+- [ ] 5.3 运行测试确认仍全部 PASS
+
+#### 6. Evidence
+- 测试命令：`pnpm vitest run apps/desktop/main/src/services/kg/__tests__/entityMatcher.test.ts`
+- 测试结果：6 tests passed, exit code 0
+- PR: <Codex 回填>
+
 ---
 
 ## C11: `p2-fetcher-always`（0.5d）
@@ -507,6 +655,53 @@ AND 输出包含 "skill=推理"
 **验证命令**: `pnpm vitest run apps/desktop/main/src/services/context/__tests__/rulesFetcher.test.ts`
 
 注意：测试中必须 mock `kgService.entityList`，禁止依赖真实数据库。
+
+### Tasks（写入 `tasks.md`）
+
+#### 1. Specification
+- [ ] 1.1 审阅 `layerAssemblyService.ts` 的 `defaultFetchers()` → `rules` fetcher 当前桩实现
+- [ ] 1.2 审阅 C8 delta spec 确认 `entityList` 支持 `filter.aiContextLevel` 参数
+- [ ] 1.3 确认 `ContextLayerFetcher` 函数签名和 `ContextLayerFetchResult` 返回类型
+- [ ] 1.4 Dependency Sync Check: 核对 C8 `entityList({ filter: { aiContextLevel: "always" } })` 接口 → `NO_DRIFT`
+
+#### 2. TDD Mapping
+| Scenario ID | 测试文件 | 测试用例名 | 断言要点 |
+|---|---|---|---|
+| S1 | `rulesFetcher.test.ts` | `should inject always entities into rules layer` | `chunks.length >= 2`，内容包含实体名和描述 |
+| S2 | `rulesFetcher.test.ts` | `should return empty chunks when no always entities` | `chunks.length === 0`，无 warning |
+| S3 | `rulesFetcher.test.ts` | `should degrade with KG_UNAVAILABLE warning on error` | `chunks.length === 0`，`warnings[0]` 包含 `KG_UNAVAILABLE` |
+| S4 | `rulesFetcher.test.ts` | `should format entity with type, description, attributes` | 输出包含 `## 角色：林默` 和属性键值对 |
+
+#### 3. Red（先写失败测试）
+- [ ] 3.1 创建 `apps/desktop/main/src/services/context/__tests__/rulesFetcher.test.ts`
+- [ ] 3.2 mock `kgService.entityList` 返回 2 个 always 实体
+- [ ] 3.3 编写 S1 测试 `should inject always entities into rules layer` — `expect(result.chunks.length).toBeGreaterThanOrEqual(1)`，`expect(result.chunks[0].content).toContain("林默")`
+- [ ] 3.4 编写 S2 测试 `should return empty chunks when no always entities` — mock 返回空数组，`expect(result.chunks).toEqual([])`
+- [ ] 3.5 编写 S3 测试 `should degrade with KG_UNAVAILABLE warning on error` — mock 抛出异常，`expect(result.warnings![0]).toContain("KG_UNAVAILABLE")`
+- [ ] 3.6 编写 S4 测试 `should format entity with type, description, attributes` — `expect(content).toContain("## 角色：林默")`，`expect(content).toContain("age=28")`
+- [ ] 3.7 运行测试确认全部 FAIL（rules fetcher 仍为桩实现）
+Red 失败证据要求：断言失败——桩返回硬编码字符串而非 KG 实体
+
+#### 4. Green（最小实现通过）
+- [ ] 4.1 创建 `apps/desktop/main/src/services/context/fetchers/rulesFetcher.ts`
+- [ ] 4.2 实现 `createRulesFetcher(deps: { kgService })` 工厂函数，返回 `ContextLayerFetcher`
+- [ ] 4.3 fetcher 内部逻辑：
+    - 调用 `kgService.entityList({ projectId: request.projectId, filter: { aiContextLevel: "always" } })`
+    - 如果返回 `ok: false` 或抛出异常，返回 `{ chunks: [], warnings: ["KG_UNAVAILABLE: ..."] }`
+    - 格式化每个实体为结构化文本 chunk（`formatEntityForContext` 辅助函数）
+- [ ] 4.4 实现 `formatEntityForContext(entity)` — 输出 `## <类型中文>：<name>\n- 类型：<type>\n- 描述：<description>\n- 属性：<key=value, ...>`
+- [ ] 4.5 修改 `layerAssemblyService.ts` 的 `defaultFetchers()`，将 rules 位替换为 `createRulesFetcher`
+- [ ] 4.6 运行测试确认全部 PASS
+
+#### 5. Refactor（保持绿灯）
+- [ ] 5.1 将 `formatEntityForContext` 提取为独立导出函数（C12 retrieved fetcher 复用）
+- [ ] 5.2 确认 fetcher 工厂函数使用显式依赖注入（不 import 全局单例）
+- [ ] 5.3 运行测试确认仍全部 PASS
+
+#### 6. Evidence
+- 测试命令：`pnpm vitest run apps/desktop/main/src/services/context/__tests__/rulesFetcher.test.ts`
+- 测试结果：4 tests passed, exit code 0
+- PR: <Codex 回填>
 
 ---
 
@@ -597,6 +792,59 @@ AND 不抛出异常到上层
 **验证命令**: `pnpm vitest run apps/desktop/main/src/services/context/__tests__/retrievedFetcher.test.ts`
 
 注意：测试中必须 mock `kgService.entityList` 和 `matchEntities`，禁止依赖真实数据库。
+
+### Tasks（写入 `tasks.md`）
+
+#### 1. Specification
+- [ ] 1.1 审阅 `layerAssemblyService.ts` 的 `defaultFetchers()` → `retrieved` fetcher 当前桩实现
+- [ ] 1.2 审阅 C10 delta spec 确认 `matchEntities` 函数签名和 `MatchResult` 类型
+- [ ] 1.3 审阅 C11 确认 `formatEntityForContext` 已抽取为可复用函数
+- [ ] 1.4 Dependency Sync Check: 核对 C10 `matchEntities` 签名 + C8 `entityList({ filter })` → `NO_DRIFT`
+
+#### 2. TDD Mapping
+| Scenario ID | 测试文件 | 测试用例名 | 断言要点 |
+|---|---|---|---|
+| S1 | `retrievedFetcher.test.ts` | `should inject detected entities into retrieved layer` | `chunks[0].source` 包含 `codex:detected`，内容包含实体详情 |
+| S2 | `retrievedFetcher.test.ts` | `should return empty when no entities matched` | `chunks.length === 0` |
+| S3 | `retrievedFetcher.test.ts` | `should skip detection when additionalInput is empty` | `chunks.length === 0`，`matchEntities` 未被调用 |
+| S4 | `retrievedFetcher.test.ts` | `should degrade with KG_UNAVAILABLE on kg error` | `warnings[0]` 包含 `KG_UNAVAILABLE` |
+| S5 | `retrievedFetcher.test.ts` | `should degrade with ENTITY_MATCH_FAILED on matcher error` | `warnings[0]` 包含 `ENTITY_MATCH_FAILED` |
+
+#### 3. Red（先写失败测试）
+- [ ] 3.1 创建 `apps/desktop/main/src/services/context/__tests__/retrievedFetcher.test.ts`
+- [ ] 3.2 mock `kgService.entityList` 和 `matchEntities`
+- [ ] 3.3 编写 S1 测试 `should inject detected entities into retrieved layer`：
+    - mock entityList 返回 1 个 when_detected 实体
+    - mock matchEntities 返回 `[{ entityId: "e1", matchedTerm: "小雨", position: 0 }]`
+    - `expect(result.chunks[0].source).toContain("codex:detected")`
+- [ ] 3.4 编写 S2 测试 `should return empty when no entities matched` — mock matchEntities 返回 `[]`
+- [ ] 3.5 编写 S3 测试 `should skip detection when additionalInput is empty` — request.additionalInput = `""`，`expect(matchEntities).not.toHaveBeenCalled()`
+- [ ] 3.6 编写 S4 测试 `should degrade with KG_UNAVAILABLE on kg error` — mock entityList 抛出异常
+- [ ] 3.7 编写 S5 测试 `should degrade with ENTITY_MATCH_FAILED on matcher error` — mock matchEntities 抛出异常
+- [ ] 3.8 运行测试确认全部 FAIL（retrieved fetcher 仍为桩实现）
+Red 失败证据要求：断言失败——桩返回空/硬编码而非 Codex 检测结果
+
+#### 4. Green（最小实现通过）
+- [ ] 4.1 创建 `apps/desktop/main/src/services/context/fetchers/retrievedFetcher.ts`
+- [ ] 4.2 实现 `createRetrievedFetcher(deps: { kgService, matchEntities })` 工厂函数
+- [ ] 4.3 fetcher 内部逻辑：
+    - 若 `request.additionalInput` 为空/undefined，直接返回 `{ chunks: [] }`
+    - 调用 `kgService.entityList({ projectId, filter: { aiContextLevel: "when_detected" } })`（try-catch → KG_UNAVAILABLE）
+    - 将实体映射为 `MatchableEntity[]`
+    - 调用 `matchEntities(text, matchableEntities)`（try-catch → ENTITY_MATCH_FAILED）
+    - 对每个匹配结果，用 `formatEntityForContext` 格式化为 chunk，source 为 `codex:detected:<entityId>`
+- [ ] 4.4 修改 `layerAssemblyService.ts` 的 `defaultFetchers()`，将 retrieved 位替换为 `createRetrievedFetcher`
+- [ ] 4.5 运行测试确认全部 PASS
+
+#### 5. Refactor（保持绿灯）
+- [ ] 5.1 确认与 C11 rulesFetcher 共用 `formatEntityForContext`（不重复实现）
+- [ ] 5.2 确认两层 try-catch 各自产出不同 warning code
+- [ ] 5.3 运行测试确认仍全部 PASS
+
+#### 6. Evidence
+- 测试命令：`pnpm vitest run apps/desktop/main/src/services/context/__tests__/retrievedFetcher.test.ts`
+- 测试结果：5 tests passed, exit code 0
+- PR: <Codex 回填>
 
 ---
 
@@ -691,6 +939,58 @@ AND 输出包含 "learned" 或 "自动学习"
 
 注意：测试中必须 mock `memoryService.previewInjection`，禁止依赖真实数据库和 LLM。
 
+### Tasks（写入 `tasks.md`）
+
+#### 1. Specification
+- [ ] 1.1 审阅 `layerAssemblyService.ts` 的 `defaultFetchers()` → `settings` fetcher 当前桩实现
+- [ ] 1.2 审阅 `memoryService.ts` 确认 `previewInjection` 方法签名和 `MemoryInjectionPreview` 返回类型
+- [ ] 1.3 审阅 `assembleSystemPrompt.ts` 确认 `memoryOverlay` 参数接入点
+- [ ] 1.4 Dependency Sync Check: 核对 P1.C2 `assembleSystemPrompt({ memoryOverlay })` 参数 → `NO_DRIFT`
+
+#### 2. TDD Mapping
+| Scenario ID | 测试文件 | 测试用例名 | 断言要点 |
+|---|---|---|---|
+| S1 | `settingsFetcher.test.ts` | `should inject memory items into settings layer` | `chunks[0].content` 包含偏好文本 |
+| S2 | `settingsFetcher.test.ts` | `should return empty chunks when no memory items` | `chunks.length === 0` |
+| S3 | `settingsFetcher.test.ts` | `should degrade with MEMORY_UNAVAILABLE on error` | `warnings[0]` 包含 `MEMORY_UNAVAILABLE` |
+| S4 | `settingsFetcher.test.ts` | `should report MEMORY_DEGRADED on semantic degradation` | `warnings` 包含 `MEMORY_DEGRADED` |
+| S5 | `settingsFetcher.test.ts` | `should include origin in formatted output` | 输出包含 `learned` 或 `manual` |
+
+#### 3. Red（先写失败测试）
+- [ ] 3.1 创建 `apps/desktop/main/src/services/context/__tests__/settingsFetcher.test.ts`
+- [ ] 3.2 mock `memoryService.previewInjection`
+- [ ] 3.3 编写 S1 测试 `should inject memory items into settings layer`：
+    - mock 返回 2 条 items（一条 learned，一条 manual）
+    - `expect(result.chunks[0].content).toContain("动作场景偏好短句")`
+    - `expect(result.chunks[0].source).toBe("memory:injection")`
+- [ ] 3.4 编写 S2 测试 `should return empty chunks when no memory items` — mock 返回 `{ items: [], mode: "deterministic" }`，`expect(result.chunks).toEqual([])`
+- [ ] 3.5 编写 S3 测试 `should degrade with MEMORY_UNAVAILABLE on error` — mock 抛出异常，`expect(result.warnings![0]).toContain("MEMORY_UNAVAILABLE")`
+- [ ] 3.6 编写 S4 测试 `should report MEMORY_DEGRADED on semantic degradation` — mock 返回 `diagnostics: { degradedFrom: "semantic", reason: "embedding service unavailable" }`，`expect(result.warnings).toContainEqual(expect.stringContaining("MEMORY_DEGRADED"))`
+- [ ] 3.7 编写 S5 测试 `should include origin in formatted output` — `expect(content).toMatch(/learned|自动学习/)`
+- [ ] 3.8 运行测试确认全部 FAIL（settings fetcher 仍为桩实现）
+Red 失败证据要求：断言失败——桩返回空 chunks 而非记忆注入内容
+
+#### 4. Green（最小实现通过）
+- [ ] 4.1 创建 `apps/desktop/main/src/services/context/fetchers/settingsFetcher.ts`
+- [ ] 4.2 实现 `createSettingsFetcher(deps: { memoryService })` 工厂函数
+- [ ] 4.3 fetcher 内部逻辑：
+    - 调用 `memoryService.previewInjection({ projectId: request.projectId, documentId: request.documentId })`（try-catch → MEMORY_UNAVAILABLE）
+    - 如果 items 为空，返回 `{ chunks: [] }`
+    - 格式化 items 为单个 chunk：`[用户写作偏好 — 记忆注入]\n` + 每条 item `- <content>（来源：<origin>）\n`
+    - 如果 diagnostics?.degradedFrom 存在，添加 warning `MEMORY_DEGRADED: <reason>`
+- [ ] 4.4 修改 `layerAssemblyService.ts` 的 `defaultFetchers()`，将 settings 位替换为 `createSettingsFetcher`
+- [ ] 4.5 运行测试确认全部 PASS
+
+#### 5. Refactor（保持绿灯）
+- [ ] 5.1 确认 fetcher 工厂函数使用显式依赖注入
+- [ ] 5.2 确认格式化输出中 origin 的中文映射（`learned` → `自动学习`，`manual` → `手动添加`）
+- [ ] 5.3 运行测试确认仍全部 PASS
+
+#### 6. Evidence
+- 测试命令：`pnpm vitest run apps/desktop/main/src/services/context/__tests__/settingsFetcher.test.ts`
+- 测试结果：5 tests passed, exit code 0
+- PR: <Codex 回填>
+
 ---
 
 ## 约束
@@ -699,8 +999,8 @@ AND 输出包含 "learned" 或 "自动学习"
 - 每个 change 必须产出三个文件，参照 `openspec/changes/_template/` 的目录结构
 - Delta spec 中的每个 Scenario 必须使用"假设/当/则/并且"格式，包含具体数据值，禁止模糊描述
 - 每个 proposal.md 必须包含 Codex 实现指引（目标文件路径、验证命令、Mock 要求）
-- 每个 tasks.md 的 §2 TDD Mapping 必须为每个 Scenario 指定测试文件路径和测试用例名
-- tasks.md 的 §3-§6 留空，由 Codex 填写
+- 每个 tasks.md **全部六段**（§1-§6）必须完整填写：§3 Red 精确到每个测试文件路径、测试用例名和断言；§4 Green 精确到每个实现文件和函数；§5 Refactor 列出具体重构动作；§6 Evidence 列出验证命令和预期测试数量
+- §6 Evidence 中的 PR 链接字段写 `<Codex 回填>`，其余所有内容必须由规划 Agent 完成
 - 完成全部 6 个 change 的三层文档后，必须执行二次核对和三次核对
 - 核对发现的问题必须修复后才能宣布交付
 
