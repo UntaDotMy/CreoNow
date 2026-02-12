@@ -1,7 +1,7 @@
 # AI Native 审计路线图：36 Changes × 6 Phases
 
 > 基于 `docs/audit/` 七份审计报告，拆解为可执行的 OpenSpec Change 序列。
-> 创建时间：2026-02-12 | 更新：2026-02-12（v2 细粒度拆分）
+> 创建时间：2026-02-12 | 更新：2026-02-13（P1 完成，P2 就绪）
 > 总实现量：~29d（不含 spec 编写 ~11d）
 
 ## 拆分原则
@@ -36,19 +36,19 @@
 
 ---
 
-## Phase 1 — AI 可用（7 changes, 5.5d）
+## Phase 1 — AI 可用（7 changes, 5.5d）✅ 已完成
 
 目标：AI 功能从"不可用"→"基本可用"。用户可在 AI 面板多轮对话，AI 有写作身份。
 
-| # | Change ID | Module | Scope | Est |
-|---|-----------|--------|-------|-----|
-| 1 | `p1-identity-template` | ai-service | 身份提示词模板（5 个 XML 区块） | 0.5d |
-| 2 | `p1-assemble-prompt` | ai-service | combineSystemText → assembleSystemPrompt 分层组装 | 1d |
-| 3 | `p1-chat-skill` | skill-system | chat 技能 SKILL.md + 基础意图路由 | 0.5d |
-| 4 | `p1-aistore-messages` | ai-service | aiStore 增加 messages 数组 + add/clear | 0.5d |
-| 5 | `p1-multiturn-assembly` | ai-service | LLM 多轮消息组装 + token 裁剪 | 1d |
-| 6 | `p1-apikey-storage` | workbench | API Key safeStorage + IPC 通道 | 1d |
-| 7 | `p1-ai-settings-ui` | workbench | AI 设置面板 UI（Key/模型/测试/降级） | 1d |
+| # | Change ID | Module | Scope | Est | 状态 |
+|---|-----------|--------|-------|-----|------|
+| 1 | `p1-identity-template` | ai-service | 身份提示词模板（5 个 XML 区块） | 0.5d | ✅ #468 |
+| 2 | `p1-assemble-prompt` | ai-service | combineSystemText → assembleSystemPrompt 分层组装 | 1d | ✅ #477 |
+| 3 | `p1-chat-skill` | skill-system | chat 技能 SKILL.md + 基础意图路由 | 0.5d | ✅ #469 |
+| 4 | `p1-aistore-messages` | ai-service | aiStore 增加 messages 数组 + add/clear | 0.5d | ✅ #483 |
+| 5 | `p1-multiturn-assembly` | ai-service | LLM 多轮消息组装 + token 裁剪 | 1d | ✅ #486 |
+| 6 | `p1-apikey-storage` | workbench | API Key safeStorage + IPC 通道 | 1d | ✅ #470 |
+| 7 | `p1-ai-settings-ui` | workbench | AI 设置面板 UI（Key/模型/测试/降级） | 1d | ✅ #476 |
 
 **依赖**：C2→C1, C5→C4→C2, C3 独立, C7→C6, C6 独立
 
@@ -70,6 +70,8 @@
 | 13 | `p2-memory-injection` | memory-system | Memory previewInjection → AI prompt + KG rules → Context | 1d |
 
 **依赖**：C10→C8+C9, C12→C10+C11, C11→C8, C13→Phase1.C2
+
+**详细 Scenario 见** `docs/plans/phase2-agent-instruction.md`
 
 **关键 Scenario 示例**：
 

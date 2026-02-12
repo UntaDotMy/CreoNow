@@ -416,3 +416,248 @@ AI 服务必须支持 provider 健康探测、自动降级切换、Token 预算�
 - **当** 用户继续发送消息
 - **则** 系统提示归档旧会话并阻止继续追加
 - **并且** 不丢失已有消息
+
+---
+
+### Requirement: 全局 AI 身份提示词模板
+
+AI 服务**必须**提供全局身份提示词模板（`GLOBAL_IDENTITY_PROMPT` 常量），始终作为系统提示词的第一层注入。模板**必须**包含以下 5 个 XML 区块：
+
+| 区块       | 标签                  | 内容                                                                                                                            |
+| ---------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| 身份定义   | `<identity>`          | AI 创作伙伴核心身份，首要原则：尊重创作者风格和意图                                                                             |
+| 写作素养   | `<writing_awareness>` | 叙事结构（narrative structure）、角色塑造（characterization）、场景 blocking、Show don't tell、POV 一致性、节奏控制、伏笔与回收 |
+| 角色流动   | `<role_fluidity>`     | ghostwriter（续写）、muse（头脑风暴）、editor（评审）、actor（扮演角色）、painter（描写）五个角色及切换规则                     |
+| 行为约束   | `<behavior>`          | 中文回应、保持创作者风格、不确定时追问、纯文本/Markdown 输出、不重复用户输入                                                    |
+| 上下文感知 | `<context_awareness>` | 声明后续动态注入的上下文类型（项目、文档、光标、偏好、KG）                                                                      |
+
+REQ-ID: `REQ-AIS-IDENTITY`
+
+#### Scenario: S1 模板包含五个 XML 区块
+
+- **假设** 导入 `GLOBAL_IDENTITY_PROMPT` 常量
+- **当** 读取其值
+- **则** `typeof GLOBAL_IDENTITY_PROMPT === "string"`
+- **并且** 值包含 `"<identity>"` 和 `"</identity>"`
+- **并且** 值包含 `"<writing_awareness>"` 和 `"</writing_awareness>"`
+- **并且** 值包含 `"<role_fluidity>"` 和 `"</role_fluidity>"`
+- **并且** 值包含 `"<behavior>"` 和 `"</behavior>"`
+- **并且** 值包含 `"<context_awareness>"` 和 `"</context_awareness>"`
+
+#### Scenario: S2 写作素养区块包含核心概念
+
+- **假设** 导入 `GLOBAL_IDENTITY_PROMPT` 常量
+- **当** 提取 `<writing_awareness>` 与 `</writing_awareness>` 之间的内容
+- **则** 内容包含 `"Show don't tell"` 或 `"展示而非叙述"`
+- **并且** 内容包含 `"blocking"` 或 `"场景"`
+- **并且** 内容包含 `"POV"` 或 `"叙事"` 或 `"第一人称"`
+
+#### Scenario: S3 角色流动区块定义五个角色
+
+- **假设** 导入 `GLOBAL_IDENTITY_PROMPT` 常量
+- **当** 提取 `<role_fluidity>` 与 `</role_fluidity>` 之间的内容
+- **则** 内容包含 `"ghostwriter"`
+- **并且** 内容包含 `"muse"`
+- **并且** 内容包含 `"editor"`
+- **并且** 内容包含 `"actor"`
+- **并且** 内容包含 `"painter"`
+
+---
+
+### Requirement: 系统提示词分层组装
+
+系统提示词**必须**通过 `assembleSystemPrompt` 函数按固定顺序分层组装，替代原有 `combineSystemText` 的无层级拼接。
+
+组装顺序（约束力从高到低）：
+
+| 序号 | 层名     | 参数名              | 必选 | 说明                                     |
+| ---- | -------- | ------------------- | ---- | ---------------------------------------- |
+| 1    | identity | `globalIdentity`    | 是   | 全局身份模板（`GLOBAL_IDENTITY_PROMPT`） |
+| 2    | rules    | `userRules`         | 否   | 用户/项目级写作规则                      |
+| 3    | skill    | `skillSystemPrompt` | 否   | 当前技能的 system prompt                 |
+| 4    | mode     | `modeHint`          | 否   | 模式提示（agent/plan/ask）               |
+| 5    | memory   | `memoryOverlay`     | 否   | 用户偏好与写作风格记忆                   |
+| 6    | context  | `contextOverlay`    | 否   | 动态上下文（KG 规则、项目约束）          |
+
+缺省的层直接跳过，不产生空行或占位符。各层以 `\n\n` 连接。
+`globalIdentity` 参数为必选；当其传入空白字符串时，按"空层"处理并跳过，不产生前导分隔符。
+
+函数签名：
+
+```typescript
+function assembleSystemPrompt(args: {
+  globalIdentity: string;
+  userRules?: string;
+  skillSystemPrompt?: string;
+  modeHint?: string;
+  memoryOverlay?: string;
+  contextOverlay?: string;
+}): string;
+```
+
+REQ-ID: `REQ-AIS-PROMPT-ASSEMBLY`
+
+#### Scenario: S1 全层组装顺序正确
+
+- **假设** `args = { globalIdentity: "<identity>AI</identity>", userRules: "规则：不写暴力内容", skillSystemPrompt: "你是续写助手，从光标处继续写作", modeHint: "Mode: agent", memoryOverlay: "用户偏好：简洁风格", contextOverlay: "当前角色：林默正在调查案件" }`
+- **当** 调用 `assembleSystemPrompt(args)`
+- **则** 返回值中 `"<identity>"` 出现位置 < `"规则"` 出现位置
+- **并且** `"规则"` 出现位置 < `"续写助手"` 出现位置
+- **并且** `"续写助手"` 出现位置 < `"Mode: agent"` 出现位置
+- **并且** `"Mode: agent"` 出现位置 < `"简洁风格"` 出现位置
+- **并且** `"简洁风格"` 出现位置 < `"林默"` 出现位置
+
+#### Scenario: S2 缺省层跳过
+
+- **假设** `args = { globalIdentity: "<identity>AI</identity>", userRules: undefined, skillSystemPrompt: undefined, modeHint: undefined, memoryOverlay: undefined, contextOverlay: undefined }`
+- **当** 调用 `assembleSystemPrompt(args)`
+- **则** 返回值 === `"<identity>AI</identity>"`
+- **并且** 返回值不包含连续两个 `\n\n\n\n`（无空层残留）
+
+#### Scenario: S3 空白字符串层被跳过
+
+- **假设** `args = { globalIdentity: "<identity>AI</identity>", userRules: "  ", skillSystemPrompt: "", memoryOverlay: "\n" }`
+- **当** 调用 `assembleSystemPrompt(args)`
+- **则** 返回值 === `"<identity>AI</identity>"`
+- **并且** 空白/换行的层不出现在输出中
+
+#### Scenario: S4 identity 为空白时不产生占位分隔符
+
+- **假设** `args = { globalIdentity: "   ", modeHint: "Mode: agent" }`
+- **当** 调用 `assembleSystemPrompt(args)`
+- **则** 返回值 === `"Mode: agent"`
+- **并且** 返回值不以 `\n\n` 开头
+
+---
+
+### Requirement: 对话消息管理器
+
+AI 服务**必须**在主进程维护对话消息数组，通过 `ChatMessageManager` 管理。
+
+类型定义：
+
+```typescript
+type ChatMessage = {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  timestamp: number;
+  skillId?: string;
+  metadata?: {
+    tokenCount: number;
+    model: string;
+  };
+};
+```
+
+支持操作：
+
+- `add(msg: ChatMessage)`: 追加消息（浅拷贝存入）
+- `clear()`: 清空全部消息
+- `getMessages()`: 返回消息数组的防御性浅拷贝
+
+REQ-ID: `REQ-AIS-MESSAGES`
+
+#### Scenario: S1 添加消息
+
+- **假设** 创建一个新的 `ChatMessageManager`，内部消息为空
+- **当** 调用 `manager.add({ id: "m1", role: "user", content: "你好", timestamp: 1000 })`
+- **则** `manager.getMessages().length === 1`
+- **并且** `manager.getMessages()[0].role === "user"`
+- **并且** `manager.getMessages()[0].content === "你好"`
+- **并且** `manager.getMessages()[0].id === "m1"`
+- **并且** `manager.getMessages()[0].timestamp === 1000`
+
+#### Scenario: S2 连续添加保持顺序
+
+- **假设** 创建一个新的 `ChatMessageManager`，内部消息为空
+- **当** 依次调用 `manager.add({ id: "m1", role: "user", content: "A", timestamp: 1000 })` 和 `manager.add({ id: "m2", role: "assistant", content: "B", timestamp: 1001 })`
+- **则** `manager.getMessages().length === 2`
+- **并且** `manager.getMessages()[0].content === "A"`
+- **并且** `manager.getMessages()[1].content === "B"`
+
+#### Scenario: S3 清空消息
+
+- **假设** manager 内部有 3 条消息
+- **当** 调用 `manager.clear()`
+- **则** `manager.getMessages().length === 0`
+
+#### Scenario: S4 getMessages 返回防御性拷贝
+
+- **假设** manager 内部有 1 条消息 `{ id: "m1", role: "user", content: "hello", timestamp: 1000 }`
+- **当** 获取 `const msgs = manager.getMessages()`，然后修改 `msgs[0].content = "mutated"`
+- **则** `manager.getMessages()[0].content === "hello"`（内部状态未被外部修改）
+
+---
+
+### Requirement: LLM 多轮消息组装与 Token 裁剪
+
+LLM 调用**必须**通过 `buildLLMMessages` 函数组装多轮消息数组。
+
+组装顺序：`[system, ...history, currentUser]`
+
+Token 预算裁剪规则：
+
+1. system 消息**永远**保留
+2. 当前用户消息**永远**保留
+3. 当总 token 超过 `maxTokenBudget` 时，从最早的历史消息开始裁剪
+4. system + currentUser 的 token 之和超过预算时，仍强制保留两者，历史全部裁掉
+
+函数签名：
+
+```typescript
+type LLMMessage = { role: "system" | "user" | "assistant"; content: string };
+type HistoryMessage = { role: "user" | "assistant"; content: string };
+
+function buildLLMMessages(args: {
+  systemPrompt: string;
+  history: HistoryMessage[];
+  currentUserMessage: string;
+  maxTokenBudget: number;
+}): LLMMessage[];
+```
+
+Token 估算函数：
+
+```typescript
+function estimateMessageTokens(text: string): number;
+// 空字符串 → 0
+// 非空 → Math.max(1, Math.ceil(Buffer.byteLength(text, "utf8") / 4))
+```
+
+REQ-ID: `REQ-AIS-MULTITURN`
+
+#### Scenario: S1 标准多轮组装
+
+- **假设** `systemPrompt = "<identity>AI</identity>"`，`history = [{ role: "user", content: "介绍林默" }, { role: "assistant", content: "林默是28岁侦探" }]`，`currentUserMessage = "他的性格？"`，`maxTokenBudget = 10000`
+- **当** 调用 `buildLLMMessages({ systemPrompt, history, currentUserMessage, maxTokenBudget })`
+- **则** `result.length === 4`
+- **并且** `result[0].role === "system"` 且 `result[0].content === "<identity>AI</identity>"`
+- **并且** `result[1].role === "user"` 且 `result[1].content === "介绍林默"`
+- **并且** `result[2].role === "assistant"` 且 `result[2].content === "林默是28岁侦探"`
+- **并且** `result[3].role === "user"` 且 `result[3].content === "他的性格？"`
+
+#### Scenario: S2 Token 超预算裁剪最早历史
+
+- **假设** `systemPrompt = "S"`（estimateMessageTokens → 1），`history = [{ role: "user", content: "AAAA" }, { role: "assistant", content: "BBBB" }, { role: "user", content: "CCCC" }, { role: "assistant", content: "DDDD" }]`（每条约 1 token），`currentUserMessage = "E"`（1 token），`maxTokenBudget = 4`
+- **当** 调用 `buildLLMMessages({ systemPrompt, history, currentUserMessage, maxTokenBudget })`
+- **则** result 包含 system 和 currentUser（固定 2 tokens）
+- **并且** 剩余 2 token 预算分配给最近的历史消息
+- **并且** result 最后一条是 `{ role: "user", content: "E" }`
+- **并且** 最早的历史消息被裁掉
+
+#### Scenario: S3 空历史
+
+- **假设** `systemPrompt = "system text"`，`history = []`，`currentUserMessage = "你好"`，`maxTokenBudget = 10000`
+- **当** 调用 `buildLLMMessages({ systemPrompt, history, currentUserMessage, maxTokenBudget })`
+- **则** `result.length === 2`
+- **并且** `result[0].role === "system"`
+- **并且** `result[1].role === "user"` 且 `result[1].content === "你好"`
+
+#### Scenario: S4 预算不足以容纳全部历史时强制保留 system + current
+
+- **假设** `systemPrompt` 占 100 tokens，`currentUserMessage` 占 50 tokens，`history` 有 10 条消息，`maxTokenBudget = 160`（仅够 system + current + 极少历史）
+- **当** 调用 `buildLLMMessages({ systemPrompt, history, currentUserMessage, maxTokenBudget })`
+- **则** result 包含 system + currentUser（强制保留）
+- **并且** 仅保留预算范围内的最近历史消息
+- **并且** `result[result.length - 1].role === "user"`（当前输入在最后）

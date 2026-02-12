@@ -496,3 +496,168 @@ V1 阶段仅交付深色主题为完整状态，浅色主题为可选。
 - **当** 事件在 300ms 内多次到达
 - **则** 系统去抖处理，只执行一次面板状态翻转
 - **并且** UI 最终状态可预测
+
+---
+
+### Requirement: API Key 加密存储与配置管理
+
+API Key **必须**通过 `SecretStorageAdapter`（封装 Electron `safeStorage` API）加密存储到 SQLite，**禁止**明文存储。
+
+支持的 provider 模式：
+
+| 模式            | 值                    | 说明                        |
+| --------------- | --------------------- | --------------------------- |
+| OpenAI 兼容代理 | `"openai-compatible"` | 自建/第三方代理，需 baseUrl |
+| OpenAI 直连     | `"openai-byok"`       | 用户自有 OpenAI API Key     |
+| Anthropic 直连  | `"anthropic-byok"`    | 用户自有 Anthropic API Key  |
+
+每种模式独立存储 `baseUrl` 和 `apiKey`。
+
+IPC 通道：
+
+| IPC 通道           | 通信模式         | 方向            | 用途                           |
+| ------------------ | ---------------- | --------------- | ------------------------------ |
+| `ai:config:get`    | Request-Response | Renderer → Main | 获取 AI 配置（不返回明文 key） |
+| `ai:config:update` | Request-Response | Renderer → Main | 更新 AI 配置（含加密存储 key） |
+| `ai:config:test`   | Request-Response | Renderer → Main | 测试连接有效性                 |
+
+`ai:config:get` 返回的公开数据结构：
+
+```typescript
+type AiProxySettings = {
+  enabled: boolean;
+  baseUrl: string;
+  apiKeyConfigured: boolean;
+  providerMode: "openai-compatible" | "openai-byok" | "anthropic-byok";
+  openAiCompatibleBaseUrl: string;
+  openAiCompatibleApiKeyConfigured: boolean;
+  openAiByokBaseUrl: string;
+  openAiByokApiKeyConfigured: boolean;
+  anthropicByokBaseUrl: string;
+  anthropicByokApiKeyConfigured: boolean;
+};
+```
+
+REQ-ID: `REQ-WB-KEYSAFE`
+
+#### Scenario: S1 存储并读取配置
+
+- **假设** 调用 `update({ patch: { providerMode: "openai-byok", openAiByokBaseUrl: "https://api.openai.com", openAiByokApiKey: "sk-test-abc123" } })`
+- **当** 然后调用 `get()`
+- **则** 返回 `{ ok: true, data }` 且 `data.providerMode === "openai-byok"`
+- **并且** `data.openAiByokBaseUrl === "https://api.openai.com"`
+- **并且** `data.openAiByokApiKeyConfigured === true`（不返回明文 key）
+
+#### Scenario: S2 未存储时 apiKeyConfigured 为 false
+
+- **假设** 未执行任何 `update` 操作
+- **当** 调用 `get()`
+- **则** 返回 `{ ok: true, data }` 且 `data.openAiByokApiKeyConfigured === false`
+- **并且** `data.anthropicByokApiKeyConfigured === false`
+
+#### Scenario: S3 不同 provider 模式独立存储
+
+- **假设** 执行 `update({ patch: { providerMode: "openai-byok", openAiByokApiKey: "sk-openai" } })`
+- **并且** 执行 `update({ patch: { providerMode: "anthropic-byok", anthropicByokApiKey: "sk-anthropic" } })`
+- **当** 调用 `get()`
+- **则** `data.openAiByokApiKeyConfigured === true`
+- **并且** `data.anthropicByokApiKeyConfigured === true`
+
+#### Scenario: S4 空 key 拒绝存储
+
+- **假设** 调用 `update({ patch: { openAiByokApiKey: "" } })`
+- **当** 读取内部 raw 数据
+- **则** `openAiByokApiKey` 为 `null`（空字符串被 `normalizeApiKey` 过滤）
+
+#### Scenario: S5 加密不可用时返回错误
+
+- **假设** `SecretStorageAdapter.isEncryptionAvailable()` 返回 `false`
+- **当** 调用 `update({ patch: { openAiByokApiKey: "sk-test" } })`
+- **则** 返回 `{ ok: false, error: { code: "UNSUPPORTED", message: "safeStorage is required to persist API key securely" } }`
+
+#### Scenario: S6 测试连接成功
+
+- **假设** provider 配置了有效的 baseUrl 和 apiKey，`GET /v1/models` 返回 200
+- **当** 调用 `test()`
+- **则** 返回 `{ ok: true, data: { ok: true, latencyMs: <number> } }`
+
+#### Scenario: S7 测试连接失败——认证错误
+
+- **假设** `GET /v1/models` 返回 401
+- **当** 调用 `test()`
+- **则** 返回 `{ ok: true, data: { ok: false, latencyMs: <number>, error: { code: "AI_AUTH_FAILED" } } }`
+
+---
+
+### Requirement: AI 配置设置面板
+
+设置面板**必须**包含 AI 配置区组件 `AiSettingsSection`，包含：
+
+| 元素          | 类型                      | data-testid        | 说明                                             |
+| ------------- | ------------------------- | ------------------ | ------------------------------------------------ |
+| Provider 选择 | `<select>`                | `ai-provider-mode` | openai-compatible / openai-byok / anthropic-byok |
+| Base URL 输入 | `<input>`                 | `ai-base-url`      | URL 输入框                                       |
+| API Key 输入  | `<input type="password">` | `ai-api-key`       | 密码类型，placeholder 显示配置状态               |
+| 保存按钮      | `<button>`                | `ai-save-btn`      | 调用 `ai:config:update`                          |
+| 测试连接按钮  | `<button>`                | `ai-test-btn`      | 调用 `ai:config:test`                            |
+| 错误显示      | `<span>`                  | `ai-error`         | 错误文案                                         |
+| 测试结果      | `<span>`                  | `ai-test-result`   | 成功/失败状态文案                                |
+
+REQ-ID: `REQ-WB-AICONFIG`
+
+### Requirement: 无 API Key 时降级体验
+
+无可用 API Key 时，AI 面板发送区**应该**显示配置引导文案和跳转链接，而非报错。
+
+REQ-ID: `REQ-WB-AI-DEGRADATION`
+
+#### Scenario: S0 无 API Key 时 placeholder 显示引导文案
+
+- **假设** mock `ai:config:get` 返回所有 provider 的 `apiKeyConfigured` 均为 `false`
+- **当** 渲染 `<AiSettingsSection />`
+- **则** API Key 输入框的 placeholder 为 `"未配置"`
+- **并且** 页面不显示 `data-testid="ai-error"` 的错误元素（未配置不是错误状态）
+
+#### Scenario: S1 面板渲染所有必要元素
+
+- **假设** mock `ai:config:get` 返回 `{ ok: true, data: { providerMode: "openai-compatible", openAiCompatibleBaseUrl: "", openAiCompatibleApiKeyConfigured: false, ... } }`
+- **当** 渲染 `<AiSettingsSection />`
+- **则** 页面包含 `data-testid="ai-provider-mode"` 的 select 元素
+- **并且** 页面包含 `data-testid="ai-api-key"` 的 password 输入框
+- **并且** 页面包含 `data-testid="ai-base-url"` 的输入框
+- **并且** 页面包含 `data-testid="ai-save-btn"` 的保存按钮
+- **并且** 页面包含 `data-testid="ai-test-btn"` 的测试连接按钮
+
+#### Scenario: S2 测试连接调用 IPC 并显示成功
+
+- **假设** 渲染 `<AiSettingsSection />`，初始加载完成
+- **并且** mock `ai:config:test` 返回 `{ ok: true, data: { ok: true, latencyMs: 42 } }`
+- **当** 用户点击 `data-testid="ai-test-btn"` 按钮
+- **则** `ai:config:test` IPC 被调用 1 次
+- **并且** 页面显示 `data-testid="ai-test-result"` 元素，内容包含 `"连接成功"` 和 `"42ms"`
+
+#### Scenario: S3 测试连接失败显示错误
+
+- **假设** mock `ai:config:test` 返回 `{ ok: true, data: { ok: false, latencyMs: 100, error: { code: "AI_AUTH_FAILED", message: "Proxy unauthorized" } } }`
+- **当** 用户点击测试连接按钮
+- **则** 页面显示 `data-testid="ai-test-result"` 元素，内容包含 `"AI_AUTH_FAILED"`
+
+#### Scenario: S4 保存配置调用 IPC
+
+- **假设** 渲染 `<AiSettingsSection />`，用户选择 provider 为 `"openai-byok"`，输入 Base URL 和 API Key
+- **并且** mock `ai:config:update` 返回 `{ ok: true, data: { providerMode: "openai-byok", openAiByokApiKeyConfigured: true, ... } }`
+- **当** 用户点击 `data-testid="ai-save-btn"` 按钮
+- **则** `ai:config:update` IPC 被调用 1 次
+- **并且** 调用参数 patch 包含 `providerMode: "openai-byok"`
+
+#### Scenario: S5 API Key placeholder 显示配置状态
+
+- **假设** mock `ai:config:get` 返回 `{ ok: true, data: { providerMode: "openai-byok", openAiByokApiKeyConfigured: true, ... } }`
+- **当** 渲染 `<AiSettingsSection />`
+- **则** API Key 输入框的 placeholder 为 `"已配置"`
+
+#### Scenario: S6 未配置 key 时 placeholder 显示未配置
+
+- **假设** mock `ai:config:get` 返回 `{ ok: true, data: { providerMode: "openai-byok", openAiByokApiKeyConfigured: false, ... } }`
+- **当** 渲染 `<AiSettingsSection />`
+- **则** API Key 输入框的 placeholder 为 `"未配置"`
